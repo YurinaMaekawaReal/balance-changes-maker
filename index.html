@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Patch Forge</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -130,6 +131,11 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .impdrop.has{min-height:220px;color:transparent}
 .impdrop.drag,.impdrop:hover{border-color:var(--accent)}
 .impdrop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.impcwrap{border:1px solid var(--line2);border-radius:5px;overflow:auto;max-height:52vh;background:var(--bg)}
+.impcwrap.drag{border-color:var(--accent)}
+.impcanvas{display:block;width:100%;height:auto;cursor:crosshair;touch-action:none}
+.impcols{align-items:start}
+.impcols textarea{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
 .impstat{border:1px solid var(--line);border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px;background:var(--panel2)}
 .impstat.off{opacity:.5}
 .impnote{font-size:12.5px;color:var(--warn);margin:0}
@@ -1456,156 +1462,203 @@ function hitAt(e) {
 cv.addEventListener('click', e => { const h = hitAt(e); if (h) gotoTarget(h); });
 cv.addEventListener('mousemove', e => { const h = hitAt(e); cv.style.cursor = h ? 'pointer' : 'default'; cv.title = h ? `Edit ${h.it ? (h.it.stat || 'note') : (h.g.name || 'ability')}` : ''; });
 
-/* ---------- fill values from a screenshot (uses Claude through the claude.ai viewer) ---------- */
-const sampleP = (window.claude && window.claude.use) ? window.claude.use('sample').catch(() => null) : Promise.resolve(null);
-const guideMemory = new Map();
-const IMP_ERR = {
-  not_granted: 'Claude access was declined for this page, so it cannot read images here.',
-  sampling_disabled: 'Claude is not available for this account.',
-  images_unavailable: 'This view cannot send images to Claude.',
-  rate_limited: 'Too many requests right now. Wait a minute and try again.',
-  session_expired: 'Your claude.ai session expired. Sign in again, then retry.',
-  image_rejected: 'That image could not be read. Try a PNG or JPG screenshot.',
-  refused: 'Claude declined to read this image. Try a different crop or guidance.',
-  empty_completion: 'No values came back. Make the guidance more specific and try again.',
-  invalid_json: 'The answer was not in a usable shape. Make the guidance more specific and try again.',
-  prompt_too_large: 'The guidance is too long. Shorten it and try again.'
-};
-async function fitImage(file, lim) {
-  if (file.size <= lim.maxInputBytes && lim.mediaTypes.includes(file.type)) return file;
-  const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
-  let k = Math.min(1, 2400 / Math.max(im.naturalWidth, im.naturalHeight)), blob = null;
-  for (let t = 0; t < 4; t++) {
-    const c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
-    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-    blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
-    if (blob && blob.size <= lim.maxInputBytes) break; k *= 0.7;
+/* ---------- fill values from a screenshot: text recognition runs in this browser (Tesseract), nothing is sent anywhere ---------- */
+const OCR_FILES = location.protocol === 'file:'
+  ? { lib: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js', worker: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js', core: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1', lang: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int' }
+  : { lib: 'ocr/tesseract.min.js', worker: 'ocr/worker.min.js', core: 'ocr/', lang: 'ocr/eng-traineddata.wasm' };
+let ocrWorkerP = null, ocrProgress = null;
+function loadOcr() {
+  if (ocrWorkerP) return ocrWorkerP;
+  const abs = p => new URL(p, document.baseURI).href;
+  ocrWorkerP = (async () => {
+    if (!window.Tesseract) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = OCR_FILES.lib; sc.onload = res; sc.onerror = () => rej(new Error('lib')); document.head.append(sc); });
+    // the language file is published as .wasm (a type the viewer serves); the '#' makes the library's own file name a fragment
+    const langPath = location.protocol === 'file:' ? OCR_FILES.lang : abs(OCR_FILES.lang) + '#';
+    const w = await Tesseract.createWorker('eng', 1, {
+      workerPath: abs(OCR_FILES.worker), corePath: abs(OCR_FILES.core), langPath, gzip: true,
+      logger: m => { if (ocrProgress) ocrProgress(m); }
+    });
+    await w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
+    return w;
+  })();
+  ocrWorkerP.catch(() => { ocrWorkerP = null; });
+  return ocrWorkerP;
+}
+/* crop → upscale → grayscale → light-on-dark inverted → optional black/white threshold */
+function prepRegion(img, r, opts) {
+  const k = Math.max(1, Math.min(4, 2000 / r.w));
+  const c = document.createElement('canvas'); c.width = Math.round(r.w * k); c.height = Math.round(r.h * k);
+  const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+  const d = x.getImageData(0, 0, c.width, c.height), p = d.data, n = p.length / 4, gray = new Uint8Array(n);
+  let sum = 0;
+  for (let i = 0; i < n; i++) { const g = 0.299 * p[i * 4] + 0.587 * p[i * 4 + 1] + 0.114 * p[i * 4 + 2]; gray[i] = g; sum += g; }
+  const invert = opts.invert === 'auto' ? sum / n < 128 : opts.invert === 'yes';
+  let thr = 128;
+  if (opts.contrast) { // Otsu threshold
+    const hist = new Array(256).fill(0); for (let i = 0; i < n; i++) hist[gray[i]]++;
+    let sumAll = 0; for (let t = 0; t < 256; t++) sumAll += t * hist[t];
+    let wB = 0, sumB = 0, best = 0;
+    for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = n - wB; if (!wF) break; sumB += t * hist[t]; const mB = sumB / wB, mF = (sumAll - sumB) / wF, v = wB * wF * (mB - mF) * (mB - mF); if (v > best) { best = v; thr = t; } }
   }
-  URL.revokeObjectURL(im.src); return blob;
+  for (let i = 0; i < n; i++) { let g = gray[i]; if (invert) g = 255 - g; if (opts.contrast) g = (invert ? 255 - gray[i] : gray[i]) > (invert ? 255 - thr : thr) ? 255 : 0; p[i * 4] = p[i * 4 + 1] = p[i * 4 + 2] = g; p[i * 4 + 3] = 255; }
+  x.putImageData(d, 0, 0);
+  // white margin helps the recognizer
+  const o = document.createElement('canvas'); o.width = c.width + 40; o.height = c.height + 40; const ox = o.getContext('2d'); ox.fillStyle = '#fff'; ox.fillRect(0, 0, o.width, o.height); ox.drawImage(c, 20, 20);
+  return { canvas: o, invert };
 }
-function importPrompt(t, guidance) {
-  const L = proj.layout, ch = proj.characters.find(c => c.sessions.includes(t.s)) || proj.character;
-  const lines = [
-    'You are reading a screenshot of video game balance changes (patch notes) and extracting the numbers into JSON.',
-    '', 'Context:',
-    `- Character: ${ch.name || 'unknown'}`, `- Patch/date: ${t.s.date || 'unknown'}`, `- Ability: ${t.g.name || 'unknown'}`
-  ];
-  if (t.kind === 'item') lines.push(`- Stat to fill: "${t.it.stat}" (it currently has ${t.it.rows.length} row(s)${t.it.rows.length ? ': ' + t.it.rows.map(r => r.label).join(', ') : ''})`);
-  else lines.push(`- Stats already in this ability: ${t.g.items.filter(i => i.type === 'stat').map(i => i.stat).join(', ') || 'none'}`);
-  lines.push(`- Row label convention when the image shows none: "${L.levelPrefix} 1", "${L.levelPrefix} 2", ...`,
-    '', "The user's guidance says which part of the image to read. Follow it closely:", '<guidance>', guidance.trim() || '(no guidance given; use your best judgement)', '</guidance>',
-    '', 'Rules:',
-    '- Copy every value exactly as shown, keeping units such as "s" or "%". Never compute, convert or round.',
-    '- "before" is the old value and "after" is the new value. "65 -> 56", "65 → 56", or an old column next to a new column means before "65", after "56".',
-    '- If a row shows only one value, put it in "after" and leave "before" as "".',
-    '- One row per level or line, top to bottom. Use the row label shown in the image, otherwise the convention above.',
-    '- polarity is "lower" when a smaller number is better for the player (cooldown, reload time, charge time, cost, delay, recovery, wind-up), otherwise "higher".',
-    t.kind === 'item' ? '- Return exactly one stat: the one the guidance points to, or else the stat named above.' : '- Return one entry per stat the guidance asks for, in the order they appear in the image.',
-    '- If something is unreadable or ambiguous, leave it out and say so in "notes".',
-    '', 'Reply with only JSON in this exact shape:',
-    '{"stats":[{"stat":"Aerial DMG","polarity":"higher","rows":[{"label":"Level 1","before":"65","after":"59"}]}],"notes":""}');
-  return lines.join('\n');
+/* turn recognized lines into rows; the same rules as "Paste rows" plus level detection */
+function parseOcr(text) {
+  const prefix = proj.layout.levelPrefix, rows = []; let name = '';
+  String(text || '').split('\n').forEach(raw => {
+    let line = raw.replace(/[—–]/g, '-').replace(/\s*(?:->|=>|→|»|>{1,2}|-{1,2}>)\s*/g, ' -> ').replace(/\s+/g, ' ').trim();
+    if (!line) return;
+    let label = '';
+    const lv = line.match(/\b(?:level|lvl|lv)\.?\s*(\d+)\b\s*[:.]?/i);
+    if (lv) { label = `${prefix} ${lv[1]}`; line = line.replace(lv[0], ' ').trim(); }
+    const nums = [...line.matchAll(/-?\d+(?:[.,]\d+)?\s?(?:%|sec|s|m|x)?(?![a-z])/gi)].map(m => m[0].replace(/\s/g, '').replace(',', '.'));
+    if (!nums.length) { if (!rows.length && !name && /[a-z]/i.test(line)) name = line.replace(/[:|]+$/, '').trim(); return; }
+    if (!label) { const lead = line.slice(0, line.search(/-?\d/)).replace(/[:|\-\s>]+$/, '').trim(); if (/[a-z]{2}/i.test(lead)) label = lead; }
+    rows.push({ label: label || `${prefix} ${rows.length + 1}`, before: nums.length > 1 ? nums[nums.length - 2] : '', after: nums[nums.length - 1] });
+  });
+  return { name, rows };
 }
-function cleanImport(data) {
-  const raw = Array.isArray(data) ? data : Array.isArray(data && data.stats) ? data.stats : (data && Array.isArray(data.rows)) ? [data] : [];
-  const str = v => v == null ? '' : String(v).trim().slice(0, 40);
-  const stats = raw.slice(0, 30).filter(x => x && typeof x === 'object').map(x => ({
-    stat: str(x.stat || x.name || 'Stat'), polarity: x.polarity === 'lower' ? 'lower' : 'higher',
-    rows: (Array.isArray(x.rows) ? x.rows : []).slice(0, 60).filter(r => r && typeof r === 'object').map(r => ({ label: str(r.label), before: str(r.before), after: str(r.after) }))
-  })).filter(x => x.rows.length);
-  return { stats, notes: data && typeof data.notes === 'string' ? data.notes.slice(0, 600) : '' };
-}
+const ocrMemory = new Map();
 function tInputPlain(obj, key, id) { const i = el('input', { type: 'text', id }); i.value = obj[key] ?? ''; i.addEventListener('input', () => obj[key] = i.value); return i; }
 function openImport(t) {
   const m = $('#imp'); m.textContent = ''; m.hidden = false;
   const memKey = t.kind === 'item' ? t.it.id : t.g.id;
-  let file = null, ctl = null, result = null, objUrl = null;
+  const mem = ocrMemory.get(memKey) || { src: null, regions: [], results: [] };
+  ocrMemory.set(memKey, mem);
+  let img = null, busy = false, drag = null;
   const status = el('p', { class: 'hint', role: 'status' });
-  const close = () => { if (ctl) ctl.abort(); if (objUrl) URL.revokeObjectURL(objUrl); m.hidden = true; m.textContent = ''; document.removeEventListener('paste', onPaste); document.removeEventListener('keydown', onKey); };
+  const close = () => { ocrProgress = null; m.hidden = true; m.textContent = ''; document.removeEventListener('paste', onPaste); document.removeEventListener('keydown', onKey); };
   const fin = el('input', { type: 'file', accept: 'image/*', id: 'imp-file', 'aria-label': 'Screenshot' });
-  const drop = el('label', { class: 'impdrop', for: 'imp-file' }, el('span', {}, 'Drop a screenshot here, paste it (Ctrl+V), or click to choose'), fin);
-  const setFile = f => { if (!f || !f.type.startsWith('image/')) return; file = f; if (objUrl) URL.revokeObjectURL(objUrl); objUrl = URL.createObjectURL(f); drop.style.backgroundImage = `url("${objUrl}")`; drop.classList.add('has'); status.textContent = ''; };
-  fin.addEventListener('change', () => setFile(fin.files[0]));
-  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
-  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
-  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); setFile(e.dataTransfer.files[0]); });
-  const onPaste = e => { const f = [...((e.clipboardData && e.clipboardData.files) || [])].find(x => x.type.startsWith('image/')); if (f) { e.preventDefault(); setFile(f); } };
+  const pick = el('label', { class: 'impdrop', for: 'imp-file' }, el('span', {}, 'Drop a screenshot here, paste it (Ctrl+V), or click to choose'), fin);
+  const cvs = el('canvas', { class: 'impcanvas', 'aria-label': 'Screenshot: drag boxes over the parts to read' });
+  const cvsWrap = el('div', { class: 'impcwrap', hidden: true }, cvs);
+  const regionList = el('div', { class: 'tools' });
+  const setSrc = src => { mem.src = src; mem.regions = []; mem.results = []; loadImg(); renderResults(); };
+  const loadImg = () => {
+    if (!mem.src) { pick.hidden = false; cvsWrap.hidden = true; return; }
+    const im = new Image(); im.onload = () => { img = im; pick.hidden = true; cvsWrap.hidden = false; drawCvs(); }; im.src = mem.src;
+  };
+  const readFile = f => { if (!f || !f.type.startsWith('image/')) return; const fr = new FileReader(); fr.onload = () => setSrc(fr.result); fr.readAsDataURL(f); };
+  fin.addEventListener('change', () => readFile(fin.files[0]));
+  [pick, cvsWrap].forEach(z => { z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('drag'); }); z.addEventListener('dragleave', () => z.classList.remove('drag')); z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('drag'); readFile(e.dataTransfer.files[0]); }); });
+  const onPaste = e => { const f = [...((e.clipboardData && e.clipboardData.files) || [])].find(x => x.type.startsWith('image/')); if (f) { e.preventDefault(); readFile(f); } };
   const onKey = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('paste', onPaste); document.addEventListener('keydown', onKey);
-  const guide = el('textarea', { id: 'imp-guide', rows: 3, placeholder: t.kind === 'item'
-    ? 'Tell Claude where to look, e.g. “Use the right-hand table titled Aerial DMG. Left number is old, right is new. Levels 1–9.”'
-    : 'Tell Claude what to read, e.g. “Every stat under the tongue whip icon: Normal DMG, Aerial DMG and Reload Speed.”' });
-  guide.value = guideMemory.get(memKey) || '';
-  guide.addEventListener('input', () => guideMemory.set(memKey, guide.value));
+
+  function drawCvs() {
+    if (!img) return;
+    cvs.width = img.naturalWidth; cvs.height = img.naturalHeight;
+    const x = cvs.getContext('2d'); x.drawImage(img, 0, 0);
+    const lw = Math.max(2, img.naturalWidth / 400), fs = Math.max(14, img.naturalWidth / 45);
+    const all = drag ? mem.regions.concat([drag]) : mem.regions;
+    if (all.length) { x.fillStyle = 'rgba(0,0,0,0.45)'; x.beginPath(); x.rect(0, 0, cvs.width, cvs.height); all.forEach(r => x.rect(r.x + r.w, r.y, -r.w, r.h)); x.fill('evenodd'); }
+    all.forEach((r, i) => {
+      x.strokeStyle = '#8fa2ff'; x.lineWidth = lw; x.strokeRect(r.x, r.y, r.w, r.h);
+      if (r === drag) return;
+      x.fillStyle = '#8fa2ff'; x.fillRect(r.x, r.y - fs * 1.3, fs * 1.4, fs * 1.3);
+      x.fillStyle = '#0a0c12'; x.font = `700 ${fs}px "Chakra Petch", sans-serif`; x.textAlign = 'center'; x.fillText(String(i + 1), r.x + fs * 0.7, r.y - fs * 0.3);
+    });
+    regionList.textContent = '';
+    regionList.append(el('span', { class: 'hint' }, mem.regions.length ? `${mem.regions.length} area${mem.regions.length === 1 ? '' : 's'} selected` : 'Drag boxes over the parts to read. With no box, the whole image is read.'));
+    mem.regions.forEach((r, i) => regionList.append(el('button', { class: 'btn sm', type: 'button', title: 'Remove this area', onclick: () => { mem.regions.splice(i, 1); drawCvs(); } }, `✕ Area ${i + 1}`)));
+    if (mem.regions.length) regionList.append(el('button', { class: 'btn sm', type: 'button', onclick: () => { mem.regions = []; drawCvs(); } }, 'Clear all'));
+    regionList.append(el('button', { class: 'btn sm', type: 'button', onclick: () => { mem.src = null; img = null; mem.regions = []; loadImg(); drawCvs(); regionList.textContent = ''; } }, 'Change image'));
+  }
+  const toImg = e => { const r = cvs.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * cvs.width, y: (e.clientY - r.top) / r.height * cvs.height }; };
+  cvs.addEventListener('pointerdown', e => { if (!img) return; cvs.setPointerCapture(e.pointerId); const p = toImg(e); drag = { x0: p.x, y0: p.y, x: p.x, y: p.y, w: 0, h: 0 }; });
+  cvs.addEventListener('pointermove', e => { if (!drag) return; const p = toImg(e); drag.x = Math.max(0, Math.min(drag.x0, p.x)); drag.y = Math.max(0, Math.min(drag.y0, p.y)); drag.w = Math.min(cvs.width, Math.max(drag.x0, p.x)) - drag.x; drag.h = Math.min(cvs.height, Math.max(drag.y0, p.y)) - drag.y; drawCvs(); });
+  cvs.addEventListener('pointerup', () => { if (!drag) return; if (drag.w > 6 && drag.h > 6) mem.regions.push({ x: Math.round(drag.x), y: Math.round(drag.y), w: Math.round(drag.w), h: Math.round(drag.h) }); drag = null; drawCvs(); });
+
+  const invSel = el('select', { id: 'imp-inv' }); [['auto', 'Detect automatically'], ['yes', 'Light text on dark'], ['no', 'Dark text on light']].forEach(([v, l]) => invSel.append(el('option', { value: v }, l)));
+  invSel.value = mem.invert || 'auto'; invSel.addEventListener('change', () => mem.invert = invSel.value);
+  const conChk = el('input', { type: 'checkbox', id: 'imp-con' }); conChk.checked = mem.contrast !== false; conChk.addEventListener('change', () => mem.contrast = conChk.checked);
   const modeSel = t.kind === 'group' ? (() => { const x = el('select', { id: 'imp-mode' }); x.append(el('option', { value: 'append' }, 'Add as new stats'), el('option', { value: 'replace' }, 'Replace this ability’s stats')); return x; })() : null;
   const out = el('div', { class: 'stack' });
-  const readBtn = el('button', { class: 'btn primary', type: 'button' }, 'Read values');
-  const stopBtn = el('button', { class: 'btn', type: 'button', hidden: true, onclick: () => ctl && ctl.abort() }, 'Stop');
+  const readBtn = el('button', { class: 'btn primary', type: 'button' }, 'Read text');
   const applyBtn = el('button', { class: 'btn primary', type: 'button', hidden: true }, 'Apply');
   const where = t.kind === 'item' ? `${t.s.date} › ${t.g.name || 'Ability'} › ${t.it.stat}` : `${t.s.date} › ${t.g.name || 'Ability'}`;
+  const how = t.kind === 'item'
+    ? 'Drag a box around the rows for this stat. If labels and numbers are far apart, one box per column works too: their rows are joined in order.'
+    : 'Drag one box per stat, each including its title. Every box becomes one stat.';
   m.append(el('div', { class: 'impbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Read values from an image' },
     el('div', { class: 'ghead', style: 'align-items:flex-start' }, el('div', { class: 'grow' }, el('h3', {}, t.kind === 'item' ? 'Fill rows from an image' : 'Create stats from an image'), el('div', { class: 'target' }, where)), ib('✕', 'Close', close)),
-    drop,
-    field('Guidance', guide),
+    el('p', { class: 'hint' }, how),
+    pick, cvsWrap, regionList,
+    el('div', { class: 'grid2' }, field('Text colors', invSel), el('label', { class: 'chk', style: 'align-self:end' }, conChk, 'Boost contrast')),
     modeSel ? field('When applying', modeSel) : null,
-    el('div', { class: 'impactions' }, stopBtn, readBtn),
+    el('div', { class: 'impactions' }, readBtn),
     status, out,
     el('div', { class: 'impactions' }, el('button', { class: 'btn', type: 'button', onclick: close }, 'Cancel'), applyBtn)));
-  guide.focus();
 
-  const renderResult = () => {
+  function renderResults() {
     out.textContent = '';
-    if (!result.stats.length) { status.textContent = 'No rows were found. Adjust the guidance and read again.'; applyBtn.hidden = true; return; }
-    status.textContent = `Found ${result.stats.length} stat${result.stats.length === 1 ? '' : 's'}. Check and edit the values, then apply.`;
-    if (result.notes) out.append(el('p', { class: 'impnote' }, 'Note from Claude: ' + result.notes));
-    result.stats.forEach((st, si) => {
-      if (st.on == null) st.on = t.kind === 'item' ? si === 0 : true;
-      const card = el('div', { class: 'impstat' + (st.on ? '' : ' off') });
-      const on = el('input', { type: t.kind === 'item' ? 'radio' : 'checkbox', name: 'imp-pick', id: `imp-on-${si}`, 'aria-label': 'Use this stat' }); on.checked = st.on;
-      on.addEventListener('change', () => { if (t.kind === 'item') result.stats.forEach((x, k) => x.on = k === si); else st.on = on.checked; renderResult(); });
-      const name = tInputPlain(st, 'stat', `imp-n-${si}`);
-      const pol = el('select', { id: `imp-p-${si}` }); pol.append(el('option', { value: 'higher' }, 'Higher = better'), el('option', { value: 'lower' }, 'Lower = better')); pol.value = st.polarity; pol.addEventListener('change', () => st.polarity = pol.value);
-      const rows = el('div', { class: 'rows' });
-      st.rows.forEach((r, ri) => rows.append(el('div', { class: 'rowe' },
-        tInputPlain(r, 'label', `imp-${si}-${ri}-l`), tInputPlain(r, 'before', `imp-${si}-${ri}-b`), el('span', { class: 'arr' }, '→'), tInputPlain(r, 'after', `imp-${si}-${ri}-a`),
-        ib('✕', 'Remove row', () => { st.rows.splice(ri, 1); renderResult(); }))));
-      card.append(el('div', { class: 'ihead' }, on, name, pol), rows);
+    if (!mem.results.length) { applyBtn.hidden = true; return; }
+    mem.results.forEach((res, ri) => {
+      const card = el('div', { class: 'impstat' + (res.on ? '' : ' off') });
+      const on = el('input', { type: 'checkbox', id: `imp-on-${ri}`, 'aria-label': 'Use this area' }); on.checked = res.on;
+      on.addEventListener('change', () => { res.on = on.checked; card.classList.toggle('off', !res.on); });
+      const name = tInputPlain(res, 'stat', `imp-n-${ri}`); name.placeholder = 'Stat name';
+      const pol = el('select', { id: `imp-p-${ri}` }); pol.append(el('option', { value: 'higher' }, 'Higher = better'), el('option', { value: 'lower' }, 'Lower = better')); pol.value = res.polarity; pol.addEventListener('change', () => res.polarity = pol.value);
+      const txt = el('textarea', { id: `imp-t-${ri}`, rows: Math.min(10, Math.max(3, res.text.split('\n').length)) }); txt.value = res.text;
+      const prev = el('div', { class: 'rows' });
+      const reparse = () => {
+        res.text = txt.value; const pr = parseOcr(res.text); res.rows = pr.rows;
+        prev.textContent = '';
+        if (!pr.rows.length) prev.append(el('p', { class: 'hint' }, 'No numbers found in this text yet.'));
+        pr.rows.forEach((r, k) => prev.append(el('div', { class: 'rowe' }, tInputPlain(r, 'label', `imp-${ri}-${k}-l`), tInputPlain(r, 'before', `imp-${ri}-${k}-b`), el('span', { class: 'arr' }, '→'), tInputPlain(r, 'after', `imp-${ri}-${k}-a`), el('span', {}))));
+      };
+      txt.addEventListener('input', reparse); reparse();
+      card.append(el('div', { class: 'ihead' }, on, el('b', { style: 'white-space:nowrap;font-size:12px' }, `Area ${ri + 1}`), t.kind === 'group' ? name : null, t.kind === 'group' ? pol : null),
+        el('div', { class: 'grid2 impcols' }, field('Recognized text (fix mistakes here)', txt), field('Rows', prev)));
       out.append(card);
     });
+    status.textContent = 'Check the text and rows. Editing the text updates the rows, and you can also edit rows directly.';
     applyBtn.hidden = false;
-  };
+  }
   readBtn.onclick = async () => {
-    if (!file) { status.textContent = 'Add a screenshot first.'; return; }
-    const sample = await Promise.race([sampleP, new Promise(r => setTimeout(() => r(null), 1500))]);
-    if (!sample) { status.textContent = 'Reading images only works in the claude.ai version of Patch Forge.'; return; }
-    let lim = null; try { lim = await sample.limits(); } catch (e) { }
-    if (!lim || !lim.images) { status.textContent = IMP_ERR.images_unavailable; return; }
-    let blob; try { blob = await fitImage(file, lim.images); } catch (e) { status.textContent = IMP_ERR.image_rejected; return; }
-    ctl = new AbortController(); readBtn.disabled = true; stopBtn.hidden = false; applyBtn.hidden = true; out.textContent = '';
-    status.textContent = 'Reading the image… this usually takes 10–60 seconds.';
+    if (busy) return;
+    if (!img) { status.textContent = 'Add a screenshot first.'; return; }
+    busy = true; readBtn.disabled = true; applyBtn.hidden = true;
+    ocrProgress = p => { if (p.status && p.progress != null) status.textContent = `${p.status === 'recognizing text' ? 'Reading' : 'Loading the text reader'}… ${Math.round(p.progress * 100)}%`; };
+    status.textContent = 'Loading the text reader… (first time only, about 7 MB)';
     try {
-      const data = await sample.json(importPrompt(t, guide.value), { images: [blob], signal: ctl.signal });
-      result = cleanImport(data); renderResult();
+      const w = await loadOcr();
+      const areas = mem.regions.length ? mem.regions : [{ x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight }];
+      const results = [];
+      for (let i = 0; i < areas.length; i++) {
+        status.textContent = `Reading area ${i + 1} of ${areas.length}…`;
+        const prep = prepRegion(img, areas[i], { invert: invSel.value, contrast: conChk.checked });
+        const r = await w.recognize(prep.canvas);
+        const text = r.data.text.split('\n').map(s => s.trim()).filter(Boolean).join('\n');
+        const pr = parseOcr(text);
+        const nm = pr.name || (t.kind === 'item' ? t.it.stat : 'Stat');
+        results.push({ on: true, text, stat: nm, polarity: /cool|reload|time|delay|charge|cost|recover|wind/i.test(nm) ? 'lower' : 'higher', rows: pr.rows });
+      }
+      mem.results = results; renderResults();
+      if (!results.some(r => r.rows.length)) status.textContent = 'No numbers were recognized. Try a tighter box, switch “Text colors”, or toggle “Boost contrast”.';
     } catch (e) {
-      status.textContent = e && e.code === 'cancelled' ? 'Stopped.' : (IMP_ERR[e && e.code] || 'Something went wrong reading the image. Try again.');
-    } finally { readBtn.disabled = false; stopBtn.hidden = true; ctl = null; }
+      status.textContent = 'The text reader could not start here. Check your connection and try again.';
+    } finally { busy = false; readBtn.disabled = false; ocrProgress = null; }
   };
   applyBtn.onclick = () => {
-    const picked = result.stats.filter(x => x.on && x.rows.length);
-    if (!picked.length) { status.textContent = 'Select at least one stat to apply.'; return; }
+    const picked = mem.results.filter(r => r.on && r.rows.length);
+    if (!picked.length) { status.textContent = 'Select at least one area with rows.'; return; }
+    const clean = rows => rows.map(r => ({ label: r.label, before: r.before, after: r.after }));
     if (t.kind === 'item') {
-      const st = picked[0];
-      if (!t.it.stat || /^new stat$/i.test(t.it.stat)) { t.it.stat = st.stat; t.it.polarity = st.polarity; }
-      t.it.rows = st.rows.map(r => ({ label: r.label, before: r.before, after: r.after }));
+      t.it.rows = clean(picked.flatMap(r => r.rows));
     } else {
-      const items = picked.map(st => stat(st.stat, st.rows.map(r => ({ label: r.label, before: r.before, after: r.after })), st.polarity));
+      const items = picked.map(r => stat(r.stat || 'Stat', clean(r.rows), r.polarity));
       if (modeSel.value === 'replace') t.g.items = t.g.items.filter(i => i.type !== 'stat').concat(items); else t.g.items.push(...items);
     }
-    close(); changed(); toast('Values applied');
+    mem.results = []; close(); changed(); toast('Values applied');
     gotoTarget({ s: t.s, g: t.g, it: t.kind === 'item' ? t.it : null });
   };
+  loadImg(); renderResults();
 }
-
 function renderAll() { renderChar(); renderSessionsEd(); refreshJump(); renderStylePane(); renderExportPane(); renderPresetChips(); syncMode(); }
 window.addEventListener('resize', () => { if (zoom === 'fit') redraw(); });
 renderAll(); redraw(); ensureFonts(); document.fonts.ready.then(redraw); startSaving();

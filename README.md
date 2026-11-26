@@ -16,5 +16,5 @@ Open `index.html` in any modern browser. Everything runs locally; no build step 
 - **7 presets** — Neon Arena, Classic Panels, Holo Chrome, Comic Burst, Esports Minimal, Tactical Ops, Royal Gold; every option is editable afterwards.
 - **3D type controls** — depth, angle, outline, glow, face finish, plus rotation / slant / turn for the big numbers.
 - **Jump to a change** — click any stat on the preview (or use the jump list) to open it in the editor.
-- **Read values from a screenshot** — on any stat or ability, upload or paste a screenshot, describe which part to read, review what Claude extracted, then apply. This uses Claude through claude.ai, so it only works in the claude.ai-hosted version of the app.
+- **Read values from a screenshot** — on any stat or ability, upload or paste a screenshot, drag boxes over the parts to read, fix the recognized text if needed, then apply. Text recognition runs in your browser with [Tesseract.js](https://github.com/naptha/tesseract.js) (files in `ocr/`, Apache-2.0); nothing is uploaded. Serve the folder over http(s) (e.g. GitHub Pages) to use the bundled files; when opened as a local file it loads them from the jsDelivr CDN instead.
 - **Export** — PNG at 1×–4×; save and load the whole project as `.json`. Work autosaves in the browser (IndexedDB) and, in the claude.ai version, to your claude.ai account.
