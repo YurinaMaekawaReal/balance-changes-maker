@@ -137,9 +137,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
       <button class="tab" role="tab" id="tab-export" aria-selected="false" data-pane="pane-export">Export</button>
     </div>
     <div class="pane" id="pane-content">
-      <div class="sec"><h2>Character</h2><div id="charEd" class="stack"></div></div>
+      <div class="sec"><h2>Character</h2><div id="charPick" class="ghead" style="margin-bottom:10px"></div><div id="charEd" class="stack"></div></div>
       <div class="sec"><h2>Balance sessions</h2>
-        <p class="hint" style="margin-bottom:10px">Tick a session to include it in the multi-session sheet. Use ◎ to render one session on its own.</p>
+        <p class="hint" style="margin-bottom:10px">Tick a session to include it in the timeline. Use ◎ to render one session on its own. Patch view groups every character’s sessions that share the same date text.</p>
         <div id="sessions"></div>
         <button class="btn ghost" id="addSession">+ Add balance session</button>
       </div>
@@ -153,8 +153,10 @@ input[type=range]{width:100%;accent-color:var(--accent)}
       <div class="seg" role="group" aria-label="Sheet mode">
         <button id="modeMulti" aria-pressed="true">Timeline</button>
         <button id="modeSingle" aria-pressed="false">Single</button>
+        <button id="modePatch" aria-pressed="false">Patch</button>
       </div>
       <select id="singleSel" aria-label="Session to render" hidden></select>
+      <select id="patchSel" aria-label="Patch to render" hidden></select>
       <span class="lbl">Zoom</span>
       <div class="seg" role="group" aria-label="Zoom">
         <button data-z="fit" aria-pressed="true">Fit</button>
@@ -169,6 +171,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
     <div class="view" id="view"><canvas id="cv"></canvas></div>
   </main>
 </div>
+<datalist id="patchDates"></datalist>
 <div class="toast" id="toast" hidden></div>
 <div class="modal" id="modal" hidden></div>
 
@@ -225,7 +228,7 @@ function sampleProject() {
     v: 1,
     character: { name: 'Tsuyu Asui', subtitle: 'Default costume', tag: 'Rapid', accent: '#3fd18a', image: '', focusY: 0.3, zoom: 1 },
     style: Object.assign({ key: 'neon' }, clone(PRESETS.neon)),
-    layout: { mode: 'multi', single: 0, colWidth: 232, perRow: 9, minHeight: 640, showChar: true, charWidth: 260, showBanner: true, bannerTitle: 'Balance History', bannerSub: '', showSummary: true, showUpcoming: true, upcomingLabel: 'Upcoming', stampSize: 46, stampTilt: -6, stampPos: 'bottom', iconSize: 64, autoBadge: true, strike: true, levelPrefix: 'Level', footer: '', scale: '2', iconStyle: 'top', singleColWidth: 440, singleStamp: 92, bigAuto: true, bigMaxRows: 3, heroScale: 1, heroDepth: 1.2, heroTilt: -4, heroSkew: -8, heroTurn: 0, heroArrow: 'chunky', heroBefore: 'dim', heroDirIcon: true, labels: { buff: 'BUFF', nerf: 'NERF', rework: 'REWORK', adjust: 'ADJUST' } },
+    layout: { mode: 'multi', single: 0, colWidth: 232, perRow: 9, minHeight: 640, showChar: true, charWidth: 260, showBanner: true, bannerTitle: 'Balance History', bannerSub: '', showSummary: true, showUpcoming: true, upcomingLabel: 'Upcoming', stampSize: 46, stampTilt: -6, stampPos: 'bottom', iconSize: 64, autoBadge: true, strike: true, levelPrefix: 'Level', footer: '', scale: '2', iconStyle: 'top', singleColWidth: 440, singleStamp: 92, bigAuto: true, bigMaxRows: 3, heroScale: 1, heroDepth: 1.2, heroTilt: -4, heroSkew: -8, heroTurn: 0, heroArrow: 'chunky', heroBefore: 'dim', heroDirIcon: true, patch: '', patchTitle: 'Patch Notes', patchPortrait: 150, labels: { buff: 'BUFF', nerf: 'NERF', rework: 'REWORK', adjust: 'ADJUST' } },
     sessions: [
       sess('Oct 12, 2023', 'nerf', [grp('Stealth Skill', [stat('Duration', lv([['12s', '5s'], ['13s', '8.5s'], ['14.2s', '12s']]))])]),
       sess('Nov 8, 2023', 'nerf', [
@@ -238,22 +241,28 @@ function sampleProject() {
       sess('May 22, 2024', 'buff', [grp('Tongue Whip', [note('Can now be angled toward the aim direction when used on the ground.')])]),
       sess('Jul 23, 2025', 'buff', [grp('Stealth Skill', [note('Increased movement speed while active.')])]),
       sess('Aug 20, 2025', 'buff', [grp('Tongue Grapple', [stat('Ammo', lv([[2, 3], [2, 3], [2, 3]])), stat('Downpower', [{ label: 'All levels', before: '10', after: '50' }], 'lower')]), grp('Special Action', [stat('Reload Time', [{ label: 'All levels', before: '60s', after: '40s' }], 'lower')])])
-    ]
+    ],
+    extraCharacters: [{ name: 'Example Rival', subtitle: 'Placeholder, replace me', tag: 'Example', accent: '#ff8a3d', image: '', focusY: 0.3, zoom: 1, sessions: [
+      sess('Dec 25, 2023', 'adjust', [grp('Movement', [note('Dash recovery shortened, but dash distance reduced.')])]),
+      sess('Aug 20, 2025', 'nerf', [grp('Main Skill', [stat('Damage', lv([[120, 105], [130, 114], [140, 122]]))]), grp('Ultimate', [stat('Cooldown', [{ label: 'All levels', before: '90s', after: '110s' }], 'lower')])])
+    ] }]
   };
 }
 function blankProject() {
   const p = sampleProject();
   p.character = { name: 'New Character', subtitle: '', tag: '', accent: '#7d8bff', image: '', focusY: 0.3, zoom: 1 };
   p.sessions = [sess('Patch 1.0', 'buff', [grp('Ability', [stat('Damage', lv([[100, 110]]))])])];
+  delete p.extraCharacters;
   return p;
 }
 
 /* ================= state ================= */
 const STORE = 'patch-forge-project-v1';
 let proj;
-try { const raw = localStorage.getItem(STORE); if (raw) { const p = JSON.parse(raw); if (p && Array.isArray(p.sessions)) proj = p; } } catch (e) { }
+try { const raw = localStorage.getItem(STORE); if (raw) { const p = JSON.parse(raw); if (p && (Array.isArray(p.sessions) || Array.isArray(p.characters))) proj = p; } } catch (e) { }
 if (!proj) proj = sampleProject();
 normalize(proj);
+function setProj(p) { normalize(p); proj = p; }
 function normalize(p) {
   const d = sampleProject();
   p.style = Object.assign(clone(PRESETS.neon), { key: 'neon' }, p.style || {});
@@ -261,8 +270,15 @@ function normalize(p) {
   if (['#45c8ff', '#2f8fe0', '#8ab4ff', '#2ec5ff', '#38bdf8', '#5ec4c9', '#7fb2ff'].includes(String(p.style.colors.adjust).toLowerCase())) p.style.colors.adjust = (PRESETS[p.style.key] || PRESETS.neon).colors.adjust;
   p.layout = Object.assign(d.layout, p.layout || {});
   p.layout.labels = Object.assign(clone(d.layout.labels), p.layout.labels || {});
-  p.character = Object.assign(d.character, p.character || {});
-  p.sessions.forEach(s => { s.id = s.id || uid(); s.groups = s.groups || []; s.groups.forEach(g => { g.id = g.id || uid(); g.items = g.items || []; g.items.forEach(it => { it.id = it.id || uid(); if (it.type === 'stat') it.rows = it.rows || []; }); }); });
+  // one project holds many characters; older single-character files are migrated
+  if (!Array.isArray(p.characters)) { p.characters = [Object.assign({}, p.character || {}, { sessions: p.sessions || [] })].concat(p.extraCharacters || []); }
+  delete p.character; delete p.sessions; delete p.extraCharacters;
+  p.characters = p.characters.map(c => Object.assign({ name: 'Character', subtitle: '', tag: '', accent: '#7d8bff', image: '', focusY: 0.3, zoom: 1 }, c, { id: c.id || uid(), sessions: Array.isArray(c.sessions) ? c.sessions : [] }));
+  if (!p.characters.length) p.characters.push({ id: uid(), name: 'New Character', subtitle: '', tag: '', accent: '#7d8bff', image: '', focusY: 0.3, zoom: 1, sessions: [] });
+  p.active = Math.max(0, Math.min(p.characters.length - 1, p.active | 0));
+  Object.defineProperty(p, 'character', { get() { return this.characters[this.active]; }, configurable: true, enumerable: false });
+  Object.defineProperty(p, 'sessions', { get() { return this.characters[this.active].sessions; }, configurable: true, enumerable: false });
+  p.characters.forEach(c => c.sessions.forEach(s => { s.id = s.id || uid(); s.groups = s.groups || []; s.groups.forEach(g => { g.id = g.id || uid(); g.items = g.items || []; g.items.forEach(it => { it.id = it.id || uid(); if (it.type === 'stat') it.rows = it.rows || []; }); }); }));
 }
 let saveT, warnedStore = false;
 function scheduleSave() {
@@ -477,9 +493,32 @@ const isSingle = () => proj.layout.mode === 'single';
 const colW = () => isSingle() ? proj.layout.singleColWidth : proj.layout.colWidth;
 const stampSz = () => isSingle() ? proj.layout.singleStamp : proj.layout.stampSize;
 const stampH = () => stampSz() * 1.25 + 30;
-const headerH = () => isSingle() ? 100 : HEADER_H;
+const headerH = () => isPatch() ? proj.layout.patchPortrait + 24 : isSingle() ? 100 : HEADER_H;
 const iconSz = g => Math.min(proj.layout.iconSize * (isSingle() ? 1.5 : 1) * ((g && g.iconScale) || 1), colW() - 16);
 const sideSz = g => Math.min(iconSz(g) * 0.7, colW() * 0.45);
+/* skill images: transparent edges are trimmed and the box follows the image's real shape */
+const iconCache = new Map();
+function trimCanvas(im) {
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const x = c.getContext('2d'); x.drawImage(im, 0, 0); let d;
+  try { d = x.getImageData(0, 0, c.width, c.height).data; } catch (e) { return c; }
+  let t = c.height, l = c.width, b = -1, r = -1;
+  for (let y = 0; y < c.height; y++) for (let xx = 0; xx < c.width; xx++) if (d[(y * c.width + xx) * 4 + 3] > 10) { if (y < t) t = y; if (y > b) b = y; if (xx < l) l = xx; if (xx > r) r = xx; }
+  if (b < 0 || (t === 0 && l === 0 && b === c.height - 1 && r === c.width - 1)) return c;
+  const o = document.createElement('canvas'); o.width = r - l + 1; o.height = b - t + 1; o.getContext('2d').drawImage(c, -l, -t); return o;
+}
+function getIcon(src) {
+  if (!src) return null;
+  let e = iconCache.get(src);
+  if (!e) { e = { c: null }; iconCache.set(src, e); const im = new Image(); im.onload = () => { e.c = trimCanvas(im); redraw(); }; im.src = src; }
+  return e.c;
+}
+function iconBox(g, s) {
+  const c = getIcon(g.icon), ar = c ? c.height / c.width : 1, maxW = colW() - 16;
+  let w, h; if (ar <= 1) { w = s; h = s * ar; } else { h = s; w = s / ar; }
+  if (w > maxW) { h *= maxW / w; w = maxW; }
+  return { w, h, c };
+}
 function isBig(it) {
   if (it.type !== 'stat') return false;
   const d = it.display || 'auto';
@@ -523,8 +562,8 @@ function measureItem(ctx, it, w) {
 const showName = g => g.name && !g.hideName;
 function measureGroup(ctx, g, w) {
   const L = proj.layout; let h = 10;
-  if (g.icon && L.iconStyle === 'side') h += Math.max(sideSz(g), 30) + 6;
-  else if (g.icon) { h += iconSz(g) + 4; if (showName(g)) h += 26; }
+  if (g.icon && L.iconStyle === 'side') h += Math.max(iconBox(g, sideSz(g)).h, 30) + 6;
+  else if (g.icon) { h += iconBox(g, iconSz(g)).h + 6; if (showName(g)) h += 26; }
   else if (showName(g)) h += 32;
   g.items.forEach((it, i) => { h += measureItem(ctx, it, w - 16) + (i ? 8 : 0); });
   return h + 10;
@@ -538,9 +577,29 @@ function measureColumn(ctx, s) {
   const body = Math.max(0, Math.max(...heights) - INNER);
   return { s, n, place, w: COLPAD * 2 + n * cw + (n - 1) * INNER, h: headerH() + body + 16 + stampH() + 6 };
 }
+let sessOwner = new Map();
+const patchKey = d => String(d || '').trim().toLowerCase().replace(/\s+/g, ' ');
+function allPatches() {
+  const m = new Map();
+  proj.characters.forEach(c => c.sessions.forEach(s => { const k = patchKey(s.date); if (!k) return; if (!m.has(k)) m.set(k, { key: k, label: s.date.trim(), count: 0 }); m.get(k).count++; }));
+  const arr = [...m.values()];
+  arr.forEach((p, i) => { p.i = i; p.t = Date.parse(p.label); });
+  return arr.sort((a, b) => (isNaN(a.t) || isNaN(b.t)) ? (isNaN(a.t) - isNaN(b.t)) || a.i - b.i : a.t - b.t);
+}
+function currentPatchKey() {
+  const ps = allPatches(), k = patchKey(proj.layout.patch);
+  return ps.some(p => p.key === k) ? k : (ps.length ? ps[ps.length - 1].key : '');
+}
+const isPatch = () => proj.layout.mode === 'patch';
 function renderSessions() {
   const L = proj.layout;
   let list;
+  sessOwner = new Map();
+  if (L.mode === 'patch') {
+    const key = currentPatchKey(); list = [];
+    proj.characters.forEach(c => { const s = c.sessions.find(x => patchKey(x.date) === key); if (s) { list.push(s); sessOwner.set(s, c); } });
+    return list;
+  }
   if (L.mode === 'single') { const s = proj.sessions[L.single] || proj.sessions[0]; list = s ? [s] : []; }
   else list = proj.sessions.filter(s => s.include);
   if (L.showUpcoming && L.mode !== 'single') list = list.concat([{ upcoming: true }]);
@@ -554,7 +613,7 @@ function computeLayout(ctx) {
   let contentW = 0, contentH = 0;
   rows.forEach((r, i) => { const w = r.reduce((a, c) => a + c.w, 0) + G * (r.length - 1); const h = Math.max(L.minHeight / rows.length, ...r.map(c => c.h)); r.h = h; contentW = Math.max(contentW, w); contentH += h + (i ? G : 0); });
   if (!cols.length) { contentW = 520; contentH = 300; }
-  const charW = L.showChar ? L.charWidth : 0, bannerH = L.showBanner ? 112 : 0, footH = L.footer ? 26 : 0;
+  const charW = L.showChar && !isPatch() ? L.charWidth : 0, bannerH = L.showBanner ? 112 : 0, footH = L.footer ? 26 : 0;
   const W = Math.round(P * 2 + charW + (charW ? G : 0) + contentW);
   const H = Math.round(P * 2 + bannerH + (bannerH ? G : 0) + contentH + footH);
   return { W, H, rows, cols, charW, bannerH, contentW, contentH, footH };
@@ -648,16 +707,16 @@ function drawGroup(ctx, g, x, y, w, h, sessColor, verdict) {
   ctx.lineWidth = St.panel === 'comic' ? 2.5 : 1; ctx.strokeStyle = St.panel === 'comic' ? '#000' : rgba(St.cardText, 0.1); ctx.stroke();
   ctx.restore();
   let cy = y + 10;
-  const drawIcon = (ix, iy, s) => { const im = getImg(g.icon); if (!im) return; const k = Math.min(s / im.naturalWidth, s / im.naturalHeight), iw = im.naturalWidth * k, ih = im.naturalHeight * k; ctx.save(); ctx.shadowColor = rgba(sessColor, 0.6); ctx.shadowBlur = 14; ctx.drawImage(im, ix + (s - iw) / 2, iy + (s - ih) / 2, iw, ih); ctx.restore(); };
+  const drawIcon = (bx, ix, iy) => { if (!bx.c) return; ctx.save(); ctx.shadowColor = rgba(sessColor, 0.6); ctx.shadowBlur = 14; ctx.drawImage(bx.c, ix, iy, bx.w, bx.h); ctx.restore(); };
   if (g.icon && L.iconStyle === 'side') {
-    const s = sideSz(g), rowH = Math.max(s, 30);
-    drawIcon(x + 8, cy + (rowH - s) / 2, s);
-    if (showName(g)) { const tx = x + 16 + s; const fs = fitSize(ctx, g.name.toUpperCase(), z => bodyFont(z), isSingle() ? 20 : 15, x + w - 8 - tx, 1.2); ctx.save(); ctx.font = bodyFont(fs); setLS(ctx, 1.2); ctx.fillStyle = St.cardText; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(g.name.toUpperCase(), tx, cy + rowH / 2 + 1); ctx.restore(); }
+    const bx = iconBox(g, sideSz(g)), rowH = Math.max(bx.h, 30);
+    drawIcon(bx, x + 8, cy + (rowH - bx.h) / 2);
+    if (showName(g)) { const tx = x + 16 + bx.w; const fs = fitSize(ctx, g.name.toUpperCase(), z => bodyFont(z), isSingle() ? 20 : 15, x + w - 8 - tx, 1.2); ctx.save(); ctx.font = bodyFont(fs); setLS(ctx, 1.2); ctx.fillStyle = St.cardText; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(g.name.toUpperCase(), tx, cy + rowH / 2 + 1); ctx.restore(); }
     cy += rowH + 6;
   } else if (g.icon) {
-    const s = iconSz(g);
-    drawIcon(x + w / 2 - s / 2, cy, s);
-    cy += s + 4;
+    const bx = iconBox(g, iconSz(g));
+    drawIcon(bx, x + w / 2 - bx.w / 2, cy);
+    cy += bx.h + 6;
     if (showName(g)) { const fs = fitSize(ctx, g.name.toUpperCase(), z => bodyFont(z), 14, w - 16, 1.2); ctx.save(); ctx.font = bodyFont(fs); setLS(ctx, 1.2); ctx.fillStyle = St.cardText; ctx.textAlign = 'center'; ctx.fillText(g.name.toUpperCase(), x + w / 2, cy + 17); ctx.restore(); cy += 26; }
   } else if (showName(g)) {
     let tx = x + 8;
@@ -689,10 +748,14 @@ function drawColumn(ctx, col, x, y, w, h) {
   const c = colorFor(s.verdict);
   drawPanel(ctx, x, y, w, h, c, s.verdict);
   // header
-  const sub = (s.subtitle || '').toUpperCase();
+  const owner = isPatch() ? sessOwner.get(s) : null;
+  const sub = owner ? '' : (s.subtitle || '').toUpperCase();
+  if (owner) drawPortrait(ctx, owner, x, y, w);
+  else {
   if (sub) { const fs = fitSize(ctx, sub, z => bodyFont(z, 600), 11.5, w - 24, 2.2); ctx.save(); ctx.font = bodyFont(fs, 600); setLS(ctx, 2.2); ctx.fillStyle = St.panel === 'comic' ? '#ffffff' : rgba(St.text, 0.72); ctx.textAlign = 'center'; ctx.fillText(sub, x + w / 2, y + 25); ctx.restore(); }
   const big = isSingle(), ds = fitSize(ctx, s.date || '', dispFont, big ? 42 : 24, w - 28);
   text3D(ctx, s.date || '', x + w / 2, y + (big ? (sub ? 80 : 70) : (sub ? 54 : 46)), { size: ds, color: St.text, depth: big ? undefined : Math.min(St.depth, 4), glow: 0, align: 'center' });
+  }
   const ly = y + headerH() - 8, lg = ctx.createLinearGradient(x, 0, x + w, 0);
   lg.addColorStop(0, rgba(c, 0)); lg.addColorStop(0.5, St.panel === 'fill' || St.panel === 'comic' ? rgba('#ffffff', 0.7) : c); lg.addColorStop(1, rgba(c, 0));
   ctx.fillStyle = lg; ctx.fillRect(x + 12, ly, w - 24, 2);
@@ -703,6 +766,26 @@ function drawColumn(ctx, col, x, y, w, h) {
   else drawStamp(ctx, s, x + w / 2, y + h - stampH() / 2 - 6, w);
   ctx.restore();
   col.place.forEach(p => drawGroup(ctx, p.g, x + COLPAD + p.k * (colW() + INNER), by + p.y, colW(), p.h, c, s.verdict));
+}
+function drawPortrait(ctx, ch, x, y, w) {
+  const St = proj.style, L = proj.layout, acc = ch.accent || St.accent;
+  const px = x + 10, py = y + 12, pw = w - 20, ph = L.patchPortrait;
+  const path = () => { ctx.beginPath(); if (St.corner === 'round') rr(ctx, px, py, pw, ph, 10); else if (St.corner === 'cut') { const k = 12; ctx.moveTo(px + k, py); ctx.lineTo(px + pw, py); ctx.lineTo(px + pw, py + ph - k); ctx.lineTo(px + pw - k, py + ph); ctx.lineTo(px, py + ph); ctx.lineTo(px, py + k); ctx.closePath(); } else ctx.rect(px, py, pw, ph); };
+  ctx.save(); path();
+  const g = ctx.createLinearGradient(0, py, 0, py + ph); g.addColorStop(0, mix(acc, '#000000', 0.3)); g.addColorStop(1, mix(acc, '#000000', 0.8)); ctx.fillStyle = g; ctx.fill(); ctx.clip();
+  const im = getImg(ch.image);
+  if (im) { const k = Math.max(pw / im.naturalWidth, ph / im.naturalHeight) * (ch.zoom || 1), iw = im.naturalWidth * k, ih = im.naturalHeight * k; ctx.drawImage(im, px + (pw - iw) / 2, py + (ph - ih) * (ch.focusY ?? 0.3), iw, ih); }
+  else {
+    ctx.strokeStyle = rgba(acc, 0.2); ctx.lineWidth = 10; for (let i = -ph; i < pw + ph; i += 26) { ctx.beginPath(); ctx.moveTo(px + i, py + ph); ctx.lineTo(px + i + ph * 0.6, py); ctx.stroke(); }
+    const ini = (ch.name || '?').split(/\s+/).map(q => q[0] || '').join('').slice(0, 2).toUpperCase(), is = fitSize(ctx, ini, dispFont, ph * 0.55, pw * 0.6);
+    ctx.globalAlpha = 0.45; text3D(ctx, ini, px + pw * 0.72, py + ph * 0.5 + is * 0.2, { size: is, color: acc, align: 'center', glow: 0 }); ctx.globalAlpha = 1;
+  }
+  const f = ctx.createLinearGradient(0, py + ph * 0.4, 0, py + ph); f.addColorStop(0, rgba(St.bg1, 0)); f.addColorStop(1, rgba(St.bg1, 0.92)); ctx.fillStyle = f; ctx.fillRect(px, py, pw, ph);
+  ctx.restore();
+  ctx.save(); path(); ctx.lineWidth = St.panel === 'comic' ? 3 : 1.5; ctx.strokeStyle = St.panel === 'comic' ? '#000' : rgba(acc, 0.85); ctx.stroke(); ctx.restore();
+  const ns = fitSize(ctx, ch.name || '', dispFont, 28, pw - 24);
+  text3D(ctx, ch.name || '', px + 12, py + ph - 14, { size: ns, color: mix(acc, '#ffffff', 0.3) });
+  if (ch.subtitle) { const t = ch.subtitle.toUpperCase(), fs = fitSize(ctx, t, z => bodyFont(z, 600), 11.5, pw - 24, 1.5); ctx.save(); ctx.font = bodyFont(fs, 600); setLS(ctx, 1.5); ctx.fillStyle = rgba(St.text, 0.85); ctx.fillText(t, px + 12, py + ph - 20 - ns); ctx.restore(); }
 }
 function drawCharacter(ctx, x, y, w, h) {
   const St = proj.style, ch = proj.character, acc = ch.accent || St.accent;
@@ -733,7 +816,7 @@ function drawCharacter(ctx, x, y, w, h) {
   let ny = y + h - 24;
   text3D(ctx, name, x + 18, ny, { size: ns, color: acc === St.text ? St.text : mix(acc, '#ffffff', 0.25), align: 'left' });
   ny -= ns + 6;
-  if (ch.subtitle) { ctx.save(); ctx.font = bodyFont(13, 600); setLS(ctx, 1.5); ctx.fillStyle = rgba(St.text, 0.8); ctx.fillText(ch.subtitle.toUpperCase(), x + 18, ny, w - 36); ctx.restore(); ny -= 24; }
+  if (ch.subtitle) { const t = ch.subtitle.toUpperCase(), fs = fitSize(ctx, t, z => bodyFont(z, 600), 13, w - 36, 1.5); ctx.save(); ctx.font = bodyFont(fs, 600); setLS(ctx, 1.5); ctx.fillStyle = rgba(St.text, 0.8); ctx.fillText(t, x + 18, ny); ctx.restore(); ny -= 24; }
   if (ch.tag) {
     ctx.save(); ctx.font = bodyFont(11.5); setLS(ctx, 1.8); const t = ch.tag.toUpperCase(), tw = ctx.measureText(t).width + 18;
     ctx.fillStyle = acc; ctx.beginPath(); ctx.moveTo(x + 18 + 6, ny - 14); ctx.lineTo(x + 18 + tw, ny - 14); ctx.lineTo(x + 18 + tw - 6, ny + 6); ctx.lineTo(x + 18, ny + 6); ctx.closePath(); ctx.fill();
@@ -765,10 +848,11 @@ function drawBanner(ctx, x, y, w, h, sessions) {
     }
   }
   const maxW = rx - x - 40;
-  const title = (L.bannerTitle || '').toUpperCase();
+  const title = ((isPatch() ? L.patchTitle : L.bannerTitle) || '').toUpperCase();
   const ts = fitSize(ctx, title, dispFont, 46, maxW);
   let sub = L.bannerSub;
-  if (!sub) { const parts = [proj.character.name]; if (real.length) parts.push(real.length > 1 ? `${real[0].date}  —  ${real[real.length - 1].date}` : real[0].date); sub = parts.filter(Boolean).join('   ·   '); }
+  if (isPatch()) { const pt = allPatches().find(q => q.key === currentPatchKey()); sub = `${pt ? pt.label : ''}   ·   ${real.length} character${real.length === 1 ? '' : 's'}`; }
+  else if (!sub) { const parts = [proj.character.name]; if (real.length) parts.push(real.length > 1 ? `${real[0].date}  —  ${real[real.length - 1].date}` : real[0].date); sub = parts.filter(Boolean).join('   ·   '); }
   ctx.save(); ctx.font = bodyFont(13, 600); setLS(ctx, 2); ctx.fillStyle = St.panel === 'comic' ? '#000' : rgba(St.text, 0.75); ctx.fillText(sub.toUpperCase(), x + 26, y + 32, maxW); ctx.restore();
   text3D(ctx, title, x + 24, y + 38 + ts * 0.82, { size: ts, color: St.panel === 'comic' ? '#ffffff' : acc });
 }
@@ -781,7 +865,7 @@ function drawAll(ctx, lay) {
   let left = P;
   if (lay.charW) { drawCharacter(ctx, P, top, lay.charW, lay.contentH); left += lay.charW + G; }
   if (!lay.cols.length) {
-    ctx.save(); ctx.font = bodyFont(15, 600); ctx.fillStyle = St.dim; ctx.textAlign = 'center'; ctx.fillText('Tick at least one session in the Content tab', left + lay.contentW / 2, top + 150); ctx.restore();
+    ctx.save(); ctx.font = bodyFont(15, 600); ctx.fillStyle = St.dim; ctx.textAlign = 'center'; ctx.fillText(isPatch() ? 'No character has a session with this patch date' : 'Tick at least one session in the Content tab', left + lay.contentW / 2, top + 150); ctx.restore();
   }
   let y = top;
   lay.rows.forEach(r => { let x = left; r.forEach(c => { drawColumn(ctx, c, x, y, c.w, r.h); x += c.w + G; }); y += r.h + G; });
@@ -833,7 +917,7 @@ async function exportPNG() {
     const x = c.getContext('2d'); x.setTransform(sc, 0, 0, sc, 0, 0); drawAll(x, lay);
     const blob = await new Promise(r => c.toBlob(r, 'image/png'));
     const L = proj.layout, name = slug(proj.character.name);
-    const fn = L.mode === 'single' && proj.sessions[L.single] ? `${name}-${slug(proj.sessions[L.single].date)}.png` : `${name}-balance-history.png`;
+    const fn = isPatch() ? `patch-${slug((allPatches().find(q => q.key === currentPatchKey()) || {}).label)}.png` : L.mode === 'single' && proj.sessions[L.single] ? `${name}-${slug(proj.sessions[L.single].date)}.png` : `${name}-balance-history.png`;
     const ok = await saveFile(fn, blob);
     if (!ok) showImageModal(blob, fn);
   } finally { btn.disabled = false; btn.textContent = 'Export PNG'; }
@@ -879,11 +963,28 @@ function range(path, min, max, step, id) {
 }
 
 /* character */
+function renderCharPick() {
+  const box = $('#charPick'); box.textContent = '';
+  const sel = el('select', { id: 'charSel', 'aria-label': 'Character' });
+  proj.characters.forEach((c, i) => sel.append(el('option', { value: String(i) }, `${c.name || 'Unnamed'} (${c.sessions.length})`)));
+  sel.value = String(proj.active);
+  sel.addEventListener('change', () => { proj.active = +sel.value; proj.layout.single = 0; renderChar(); renderSessionsEd(); changed(); });
+  const blankChar = () => ({ id: uid(), name: 'New Character', subtitle: '', tag: '', accent: '#7d8bff', image: '', focusY: 0.3, zoom: 1, sessions: [] });
+  box.append(sel,
+    el('button', { class: 'btn sm', type: 'button', title: 'Add a character', onclick: () => {
+      const c = blankChar(); const pk = allPatches().find(q => q.key === currentPatchKey());
+      c.sessions.push(sess(pk ? pk.label : 'Patch 1.0', 'buff', [grp('Ability', [stat('Damage', [{ label: proj.layout.levelPrefix + ' 1', before: '100', after: '110' }])])]));
+      proj.characters.push(c); proj.active = proj.characters.length - 1; openSet.add(c.sessions[0].id); renderChar(); renderSessionsEd(); changed();
+    } }, '+ New'),
+    ib('⧉', 'Duplicate character', () => { const c = clone(proj.character); c.id = uid(); c.name += ' copy'; c.sessions.forEach(s => { s.id = uid(); s.groups.forEach(g => { g.id = uid(); g.items.forEach(i => i.id = uid()); }); }); proj.characters.splice(proj.active + 1, 0, c); proj.active++; renderChar(); renderSessionsEd(); changed(); }),
+    proj.characters.length > 1 ? delBtn(() => { proj.characters.splice(proj.active, 1); proj.active = Math.max(0, proj.active - 1); renderChar(); renderSessionsEd(); changed(); }) : null);
+}
 function renderChar() {
+  renderCharPick();
   const ch = proj.character, box = $('#charEd'); box.textContent = '';
   const thumb = el('div', { class: 'thumb', style: ch.image ? `background-image:url("${ch.image}");width:48px;height:48px;background-size:cover` : 'width:48px;height:48px' });
   box.append(
-    el('div', { class: 'grid2' }, field('Name', tInput(ch, 'name', { id: 'ch-name' })), field('Subtitle', tInput(ch, 'subtitle', { id: 'ch-sub', ph: 'Costume / variant' }))),
+    el('div', { class: 'grid2' }, field('Name', tInput(ch, 'name', { id: 'ch-name', on: () => { const o = $('#charSel').options[proj.active]; if (o) o.textContent = `${ch.name || 'Unnamed'} (${ch.sessions.length})`; } })), field('Subtitle', tInput(ch, 'subtitle', { id: 'ch-sub', ph: 'Costume / variant' }))),
     el('div', { class: 'grid2' }, field('Tag', tInput(ch, 'tag', { id: 'ch-tag', ph: 'Role, class…' })), field('Accent', (() => { const c = el('input', { type: 'color', id: 'ch-acc' }); c.value = ch.accent; c.addEventListener('input', () => { ch.accent = c.value; changed(); }); return c; })())),
     el('div', { class: 'ghead' }, thumb, fileBtn(ch.image ? 'Replace art' : 'Upload art', d => { ch.image = d; renderChar(); changed(); }), ch.image ? el('button', { class: 'btn sm danger', type: 'button', onclick: () => { ch.image = ''; renderChar(); changed(); } }, 'Remove') : null),
     ch.image ? el('div', { class: 'grid2' }, field('Vertical focus', range('character.focusY', 0, 1, 0.01, 'ch-fy')), field('Zoom', range('character.zoom', 1, 2.5, 0.05, 'ch-z'))) : ''
@@ -896,7 +997,7 @@ function rebuild() { renderSessionsEd(); changed(); }
 function renderSessionsEd() {
   const list = $('#sessions'); list.textContent = '';
   proj.sessions.forEach((s, si) => list.append(sessionCard(s, si)));
-  refreshSingle();
+  refreshSingle(); refreshPatches();
 }
 function sessionCard(s, si) {
   const det = el('details', { class: 'sess' }); det.open = openSet.has(s.id);
@@ -913,7 +1014,7 @@ function sessionCard(s, si) {
     delBtn(() => { proj.sessions.splice(si, 1); if (proj.layout.single >= proj.sessions.length) proj.layout.single = 0; rebuild(); })
   ));
   const body = el('div', { class: 'sess-body' },
-    el('div', { class: 'grid2' }, field('Date / patch', tInput(s, 'date', { id: s.id + '-date', on: v => { lbl.textContent = v || 'Untitled'; refreshSingle(); } })), field('Subtitle', tInput(s, 'subtitle', { id: s.id + '-sub', ph: 'e.g. Season 4' }))),
+    el('div', { class: 'grid2' }, field('Date / patch', (() => { const i = tInput(s, 'date', { id: s.id + '-date', on: v => { lbl.textContent = v || 'Untitled'; refreshSingle(); refreshPatches(); } }); i.setAttribute('list', 'patchDates'); return i; })()), field('Subtitle', tInput(s, 'subtitle', { id: s.id + '-sub', ph: 'e.g. Season 4' }))),
     el('div', { class: 'grid3' },
       field('Verdict', sInput(s, 'verdict', VERDICTS, { id: s.id + '-v', on: v => { dot.style.background = colorFor(v); vt.textContent = v; } })),
       field('Columns', (() => { const n = el('input', { type: 'number', min: 1, max: 12, id: s.id + '-cols' }); n.value = s.cols; n.addEventListener('input', () => { s.cols = String(Math.max(1, Math.min(12, parseInt(n.value) || 1))); changed(); }); return n; })()),
@@ -995,7 +1096,7 @@ const STYLE_SPEC = [
   ['Palette', [['style.accent', 'Accent', 'color'], ['style.text', 'Text', 'color'], ['style.bg1', 'Background A', 'color'], ['style.bg2', 'Background B', 'color'], ['style.cardBg', 'Card fill', 'color'], ['style.cardText', 'Card text', 'color'], ['style.cardDim', 'Card muted', 'color'], ['style.outline', '3D outline', 'color']]],
   ['3D type', [['style.font', 'Display font', 'select', DISPLAY_FONTS.map(f => [f[0], f[0]])], ['style.body', 'Body font', 'select', BODY_FONTS.map(f => [f, f])], ['style.face', 'Face finish', 'select', [['gradient', 'Gradient'], ['chrome', 'Chrome'], ['flat', 'Flat']]], ['style.depth', 'Extrusion depth', 'range', 0, 14, 1], ['style.angle', 'Extrusion angle', 'range', 0, 180, 1], ['style.outlineW', 'Outline', 'range', 0, 6, 0.5], ['style.glow', 'Glow', 'range', 0, 40, 1]]],
   ['Panels & arrows', [['style.panel', 'Panel style', 'select', [['glass', 'Glass'], ['fill', 'Solid fill'], ['metal', 'Metal'], ['comic', 'Comic'], ['line', 'Minimal line']]], ['style.corner', 'Corners', 'select', [['cut', 'Cut'], ['round', 'Round'], ['sharp', 'Sharp']]], ['style.bgStyle', 'Backdrop', 'select', [['grid', 'Grid'], ['radial', 'Radial glow'], ['halftone', 'Halftone'], ['scan', 'Diagonal lines'], ['plain', 'Plain']]], ['style.cardAlpha', 'Card opacity', 'range', 0, 1, 0.05], ['style.patternOpacity', 'Arrow pattern', 'range', 0, 0.5, 0.01], ['style.patternSize', 'Arrow size', 'range', 14, 80, 1], ['style.patternTilt', 'Arrow tilt', 'range', -90, 90, 1]]],
-  ['Layout', [['layout.colWidth', 'Column width', 'range', 170, 360, 2], ['layout.perRow', 'Columns per row', 'range', 1, 12, 1], ['layout.minHeight', 'Min height', 'range', 300, 1400, 10], ['layout.showChar', 'Character panel', 'check'], ['layout.charWidth', 'Character width', 'range', 160, 440, 2], ['layout.showBanner', 'Title banner', 'check'], ['layout.bannerTitle', 'Banner title', 'text'], ['layout.bannerSub', 'Banner subtitle', 'text', 'Auto: name · dates'], ['layout.showSummary', 'Buff/nerf tally', 'check'], ['layout.showUpcoming', '“Upcoming” column', 'check'], ['layout.upcomingLabel', 'Upcoming label', 'text'], ['layout.footer', 'Footer / credit', 'text', '@yourhandle']]],
+  ['Layout', [['layout.colWidth', 'Column width', 'range', 170, 360, 2], ['layout.perRow', 'Columns per row', 'range', 1, 12, 1], ['layout.minHeight', 'Min height', 'range', 300, 1400, 10], ['layout.showChar', 'Character panel', 'check'], ['layout.charWidth', 'Character width', 'range', 160, 440, 2], ['layout.showBanner', 'Title banner', 'check'], ['layout.bannerTitle', 'Banner title', 'text'], ['layout.bannerSub', 'Banner subtitle', 'text', 'Auto: name · dates'], ['layout.showSummary', 'Buff/nerf tally', 'check'], ['layout.showUpcoming', '“Upcoming” column', 'check'], ['layout.upcomingLabel', 'Upcoming label', 'text'], ['layout.footer', 'Footer / credit', 'text', '@yourhandle'], ['layout.patchTitle', 'Patch view title', 'text'], ['layout.patchPortrait', 'Patch view portrait height', 'range', 80, 320, 2]]],
   ['Big 3D numbers', [['layout.bigAuto', 'Single mode: big numbers for short stats', 'check'], ['layout.bigMaxRows', 'Max rows to go big', 'range', 1, 9, 1], ['layout.singleColWidth', 'Single column width', 'range', 260, 900, 2], ['layout.singleStamp', 'Single stamp size', 'range', 40, 150, 1], ['layout.heroScale', 'Number size', 'range', 0.5, 1.8, 0.05], ['layout.heroDepth', 'Thickness', 'range', 0, 3, 0.05], ['layout.heroTilt', 'Rotation', 'range', -20, 20, 0.5], ['layout.heroSkew', 'Slant', 'range', -30, 30, 1], ['layout.heroTurn', 'Turn (fake 3D yaw)', 'range', -40, 40, 1], ['layout.heroArrow', 'Arrow', 'select', [['chunky', 'Chunky arrow'], ['chevron', 'Double chevron'], ['none', 'No arrow']]], ['layout.heroBefore', 'Old value', 'select', [['dim', 'Muted'], ['color', 'Colored'], ['hide', 'Hidden']]], ['layout.heroDirIcon', 'Up/down marker after new value', 'check']]],
   ['Skill images', [['layout.iconSize', 'Skill image size', 'range', 32, 360, 1], ['layout.iconStyle', 'Skill image position', 'select', [['top', 'Above name'], ['side', 'Beside name']]], ['layout.autoBadge', 'Letter badges when no image', 'check']]],
   ['Stamps & details', [['layout.stampSize', 'Stamp size', 'range', 24, 90, 1], ['layout.stampTilt', 'Stamp tilt', 'range', -20, 20, 1], ['layout.stampPos', 'Stamp position', 'select', [['bottom', 'Bottom'], ['top', 'Under date']]], ['layout.labels.buff', 'Buff word', 'text'], ['layout.labels.nerf', 'Nerf word', 'text'], ['layout.labels.rework', 'Rework word', 'text'], ['layout.labels.adjust', 'Adjust word', 'text'], ['layout.strike', 'Strike old values', 'check'], ['layout.levelPrefix', 'Row label prefix', 'text']]]
@@ -1038,7 +1139,7 @@ function renderExportPane() {
   const load = el('input', { type: 'file', accept: '.json,application/json', 'aria-label': 'Load project file' });
   load.addEventListener('change', () => {
     const f = load.files[0]; if (!f) return; const fr = new FileReader();
-    fr.onload = () => { try { const p = JSON.parse(fr.result); if (!p || !Array.isArray(p.sessions)) throw 0; normalize(p); proj = p; renderAll(); changed(); toast('Project loaded'); } catch (e) { toast('That file is not a Patch Forge project.'); } };
+    fr.onload = () => { try { const p = JSON.parse(fr.result); if (!p || !(Array.isArray(p.sessions) || Array.isArray(p.characters))) throw 0; setProj(p); renderAll(); changed(); toast('Project loaded'); } catch (e) { toast('That file is not a Patch Forge project.'); } };
     fr.readAsText(f); load.value = '';
   });
   let resetArmed = null;
@@ -1055,8 +1156,8 @@ function renderExportPane() {
         el('p', { class: 'hint' }, 'Your work also autosaves in this browser. Save a project file per character to keep a library.'))),
     el('div', { class: 'sec' }, el('h2', {}, 'Start over'),
       el('div', { class: 'grid2' },
-        resetBtn('Load example', () => { proj = sampleProject(); renderAll(); changed(); }),
-        resetBtn('Blank character', () => { proj = blankProject(); renderAll(); changed(); })))
+        resetBtn('Load example', () => { setProj(sampleProject()); renderAll(); changed(); }),
+        resetBtn('Blank project', () => { setProj(blankProject()); renderAll(); changed(); })))
   );
 }
 
@@ -1066,13 +1167,20 @@ function refreshSingle() {
   proj.sessions.forEach((s, i) => sel.append(el('option', { value: String(i) }, `${s.date || 'Untitled'} · ${s.verdict}`)));
   sel.value = String(Math.min(proj.layout.single, Math.max(0, proj.sessions.length - 1)));
 }
+function refreshPatches() {
+  const sel = $('#patchSel'), dl = $('#patchDates'), ps = allPatches(); sel.textContent = ''; dl.textContent = '';
+  ps.forEach(q => { sel.append(el('option', { value: q.key }, `${q.label} · ${q.count} char${q.count === 1 ? '' : 's'}`)); dl.append(el('option', { value: q.label })); });
+  sel.value = currentPatchKey();
+}
 function syncMode() {
-  const single = proj.layout.mode === 'single';
-  $('#modeMulti').setAttribute('aria-pressed', String(!single)); $('#modeSingle').setAttribute('aria-pressed', String(single));
-  $('#singleSel').hidden = !single; refreshSingle();
+  const m = proj.layout.mode;
+  $('#modeMulti').setAttribute('aria-pressed', String(m === 'multi')); $('#modeSingle').setAttribute('aria-pressed', String(m === 'single')); $('#modePatch').setAttribute('aria-pressed', String(m === 'patch'));
+  $('#singleSel').hidden = m !== 'single'; $('#patchSel').hidden = m !== 'patch'; refreshSingle(); refreshPatches();
 }
 $('#modeMulti').onclick = () => { proj.layout.mode = 'multi'; syncMode(); changed(); };
 $('#modeSingle').onclick = () => { proj.layout.mode = 'single'; syncMode(); changed(); };
+$('#modePatch').onclick = () => { proj.layout.mode = 'patch'; syncMode(); changed(); };
+$('#patchSel').onchange = e => { const q = allPatches().find(x => x.key === e.target.value); proj.layout.patch = q ? q.label : ''; changed(); };
 $('#singleSel').onchange = e => { proj.layout.single = +e.target.value; changed(); };
 document.querySelectorAll('[data-z]').forEach(b => b.onclick = () => { zoom = b.dataset.z; document.querySelectorAll('[data-z]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); redraw(); });
 $('#exportBtn').onclick = exportPNG;
