@@ -792,8 +792,6 @@ function drawRoleBg(ctx, role, c, x, y, w, h) {
   } else if (role === 'rapid') {
     const st = Math.max(4, s * 0.22);
     for (let yy = y, k = 0; yy < y + h; yy += st, k++) { ctx.fillStyle = k % 2 ? mix(c, '#ffffff', 0.18) : mix(c, '#0060a0', 0.12); ctx.fillRect(x, yy, w, st * 0.5); }
-    ctx.fillStyle = mix(c, '#2bff7a', 0.6);
-    for (let xx = x + s * 0.4; xx < x + w; xx += s * 2.4) ctx.fillRect(xx, y, Math.max(2, s * 0.07), h);
     ctx.fillStyle = rgba('#ffffff', 0.25);
     for (let xx = x + s * 1.6; xx < x + w; xx += s * 2.4) ctx.fillRect(xx, y, Math.max(1, s * 0.035), h);
   } else if (role === 'strike') {
@@ -802,8 +800,6 @@ function drawRoleBg(ctx, role, c, x, y, w, h) {
       const ox = x + i * s + (j % 2 ? s / 2 : 0), oy = y + j * th;
       ctx.fillStyle = mix(c, '#000000', 0.28);
       ctx.beginPath(); ctx.moveTo(ox + s / 2, oy + th * 0.06); ctx.lineTo(ox + s * 0.94, oy + th * 0.97); ctx.lineTo(ox + s * 0.06, oy + th * 0.97); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = mix(c, '#000000', 0.12);
-      ctx.beginPath(); ctx.moveTo(ox + s / 2, oy + th * 0.38); ctx.lineTo(ox + s * 0.72, oy + th * 0.8); ctx.lineTo(ox + s * 0.28, oy + th * 0.8); ctx.closePath(); ctx.fill();
     }
   } else if (role === 'support') {
     const band = s * 1.05, amp = s * 0.28, wl = s * 2.6;
@@ -822,9 +818,6 @@ function drawRoleBg(ctx, role, c, x, y, w, h) {
     for (let j = 0; j * st < h + st; j++) for (let i = -1; i * st < w + st; i++) {
       const cx = x + i * st + (j % 2 ? st / 2 : 0) + st / 2, cy = y + j * st + st / 2;
       ctx.fillStyle = mix(c, '#3a0060', 0.35); ctx.beginPath(); ctx.arc(cx, cy, s * 0.36, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = mix(c, '#ffffff', 0.15);
-      for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4 + j * 0.3; ctx.beginPath(); ctx.ellipse(cx + Math.cos(a) * s * 0.2, cy + Math.sin(a) * s * 0.2, s * 0.09, s * 0.045, a + 0.9, 0, Math.PI * 2); ctx.fill(); }
-      ctx.fillStyle = mix(c, '#3a0060', 0.5); ctx.beginPath(); ctx.arc(cx, cy, s * 0.08, 0, Math.PI * 2); ctx.fill();
     }
   }
   // depth: light sheen from the top-left, darken toward the bottom
