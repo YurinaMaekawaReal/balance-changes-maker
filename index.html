@@ -1089,7 +1089,7 @@ function renderChar() {
         el('div', { class: 'grid2' }, field('Tag (optional)', tInput(ch, 'tag', { id: 'ch-tag', ph: roleOf(ch) ? 'Shows role name' : 'Class, rarity…' })), field('Background color', col)));
     })(),
     el('div', { class: 'ghead' }, thumb, fileBtn(ch.image ? 'Replace art' : 'Upload art', d => { ch.image = d; renderChar(); changed(); }), ch.image ? el('button', { class: 'btn sm danger', type: 'button', onclick: () => { ch.image = ''; renderChar(); changed(); } }, 'Remove') : null),
-    ch.image ? el('div', { class: 'grid2' }, field('Horizontal focus', range('character.focusX', 0, 1, 0.01, 'ch-fx')), field('Vertical focus', range('character.focusY', 0, 1, 0.01, 'ch-fy')), field('Zoom', range('character.zoom', 1, 2.5, 0.05, 'ch-z'))) : ''
+    ch.image ? el('div', { class: 'grid2' }, field('Horizontal focus', range('character.focusX', 0, 1, 0.01, 'ch-fx')), field('Vertical focus', range('character.focusY', 0, 1, 0.01, 'ch-fy')), field('Zoom', range('character.zoom', 1, 6, 0.05, 'ch-z'))) : ''
   );
 }
 
