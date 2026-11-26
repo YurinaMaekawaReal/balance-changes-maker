@@ -239,7 +239,7 @@ function sampleProject() {
     v: 1,
     character: { name: 'Tsuyu Asui', subtitle: 'Default costume', tag: '', role: 'rapid', accent: '#00cbe6', image: '', focusY: 0.3, zoom: 1 },
     style: Object.assign({ key: 'neon' }, clone(PRESETS.neon)),
-    layout: { mode: 'multi', single: 0, colWidth: 232, perRow: 9, minHeight: 640, showChar: true, charWidth: 260, showBanner: true, bannerTitle: 'Balance History', bannerSub: '', showSummary: true, showUpcoming: true, upcomingLabel: 'Upcoming', stampSize: 46, stampTilt: -6, stampPos: 'bottom', iconSize: 64, autoBadge: true, strike: true, levelPrefix: 'Level', footer: '', scale: '2', iconStyle: 'top', singleColWidth: 440, singleStamp: 92, bigAuto: true, bigMaxRows: 3, heroScale: 1, heroDepth: 1.2, heroTilt: -4, heroSkew: -8, heroTurn: 0, heroArrow: 'chunky', heroBefore: 'dim', heroDirIcon: true, patch: '', patchTitle: 'Patch Notes', patchPortrait: 150, labels: { buff: 'BUFF', nerf: 'NERF', rework: 'REWORK', adjust: 'ADJUST' } },
+    layout: { mode: 'multi', single: 0, colWidth: 232, perRow: 9, minHeight: 640, showChar: true, charWidth: 260, showBanner: true, bannerTitle: 'Balance History', bannerSub: '', showSummary: true, showUpcoming: true, upcomingLabel: 'Upcoming', stampSize: 46, stampTilt: -6, stampPos: 'bottom', iconSize: 64, autoBadge: true, strike: true, levelPrefix: 'Level', footer: '', scale: '2', iconStyle: 'top', singleColWidth: 440, singleStamp: 92, bigAuto: true, bigMaxRows: 3, heroScale: 1, heroDepth: 1.2, heroTilt: -4, heroSkew: -8, heroTurn: 0, heroArrow: 'chunky', heroBefore: 'dim', heroDirIcon: true, patch: '', patchTitle: 'Patch Notes', patchPortrait: 150, roleBgScale: 30, roleBgDim: 0.3, labels: { buff: 'BUFF', nerf: 'NERF', rework: 'REWORK', adjust: 'ADJUST' } },
     sessions: [
       sess('Oct 12, 2023', 'nerf', [grp('Stealth Skill', [stat('Duration', lv([['12s', '5s'], ['13s', '8.5s'], ['14.2s', '12s']]))])]),
       sess('Nov 8, 2023', 'nerf', [
@@ -779,16 +779,71 @@ function drawColumn(ctx, col, x, y, w, h) {
   ctx.restore();
   col.place.forEach(p => drawGroup(ctx, p.g, x + COLPAD + p.k * (colW() + INNER), by + p.y, colW(), p.h, c, s.verdict));
 }
+/* role backgrounds, redrawn as vector patterns so they stay sharp at any export size */
+function drawRoleBg(ctx, role, c, x, y, w, h) {
+  const L = proj.layout, s = L.roleBgScale;
+  ctx.save();
+  ctx.fillStyle = c; ctx.fillRect(x, y, w, h);
+  if (role === 'assault') {
+    ctx.fillStyle = mix(c, '#ff7a00', 0.5);
+    for (let j = 0; j * s < h + s; j++) for (let i = 0; i * s < w + s; i++) { ctx.beginPath(); rr(ctx, x + i * s + s * 0.22, y + j * s + s * 0.22, s * 0.56, s * 0.56, s * 0.08); ctx.fill(); }
+    ctx.fillStyle = rgba('#ffffff', 0.35);
+    for (let j = 0; j * s < h + s; j++) for (let i = 0; i * s < w + s; i++) ctx.fillRect(x + i * s + s * 0.22, y + j * s + s * 0.22, s * 0.56, s * 0.06);
+  } else if (role === 'rapid') {
+    const st = Math.max(4, s * 0.22);
+    for (let yy = y, k = 0; yy < y + h; yy += st, k++) { ctx.fillStyle = k % 2 ? mix(c, '#ffffff', 0.18) : mix(c, '#0060a0', 0.12); ctx.fillRect(x, yy, w, st * 0.5); }
+    ctx.fillStyle = mix(c, '#2bff7a', 0.6);
+    for (let xx = x + s * 0.4; xx < x + w; xx += s * 2.4) ctx.fillRect(xx, y, Math.max(2, s * 0.07), h);
+    ctx.fillStyle = rgba('#ffffff', 0.25);
+    for (let xx = x + s * 1.6; xx < x + w; xx += s * 2.4) ctx.fillRect(xx, y, Math.max(1, s * 0.035), h);
+  } else if (role === 'strike') {
+    const th = s * 0.866;
+    for (let j = 0; j * th < h + th; j++) for (let i = -1; i * s < w + s; i++) {
+      const ox = x + i * s + (j % 2 ? s / 2 : 0), oy = y + j * th;
+      ctx.fillStyle = mix(c, '#000000', 0.28);
+      ctx.beginPath(); ctx.moveTo(ox + s / 2, oy + th * 0.06); ctx.lineTo(ox + s * 0.94, oy + th * 0.97); ctx.lineTo(ox + s * 0.06, oy + th * 0.97); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = mix(c, '#000000', 0.12);
+      ctx.beginPath(); ctx.moveTo(ox + s / 2, oy + th * 0.38); ctx.lineTo(ox + s * 0.72, oy + th * 0.8); ctx.lineTo(ox + s * 0.28, oy + th * 0.8); ctx.closePath(); ctx.fill();
+    }
+  } else if (role === 'support') {
+    const band = s * 1.05, amp = s * 0.28, wl = s * 2.6;
+    for (let j = -1; j * band < h + band; j++) {
+      const by = y + j * band;
+      ctx.beginPath();
+      for (let xx = x - 4; xx <= x + w + 4; xx += 4) { const yy = by + Math.sin((xx - x) / wl * Math.PI * 2) * amp; xx === x - 4 ? ctx.moveTo(xx, yy) : ctx.lineTo(xx, yy); }
+      for (let xx = x + w + 4; xx >= x - 4; xx -= 4) ctx.lineTo(xx, by + band * 0.42 + Math.sin((xx - x) / wl * Math.PI * 2) * amp);
+      ctx.closePath(); ctx.fillStyle = mix(c, '#007a10', 0.35); ctx.fill();
+      ctx.beginPath();
+      for (let xx = x - 4; xx <= x + w + 4; xx += 4) { const yy = by + Math.sin((xx - x) / wl * Math.PI * 2) * amp; xx === x - 4 ? ctx.moveTo(xx, yy) : ctx.lineTo(xx, yy); }
+      ctx.lineWidth = Math.max(1, s * 0.05); ctx.strokeStyle = rgba('#ffffff', 0.35); ctx.stroke();
+    }
+  } else if (role === 'technical') {
+    const st = s * 1.25;
+    for (let j = 0; j * st < h + st; j++) for (let i = -1; i * st < w + st; i++) {
+      const cx = x + i * st + (j % 2 ? st / 2 : 0) + st / 2, cy = y + j * st + st / 2;
+      ctx.fillStyle = mix(c, '#3a0060', 0.35); ctx.beginPath(); ctx.arc(cx, cy, s * 0.36, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = mix(c, '#ffffff', 0.15);
+      for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4 + j * 0.3; ctx.beginPath(); ctx.ellipse(cx + Math.cos(a) * s * 0.2, cy + Math.sin(a) * s * 0.2, s * 0.09, s * 0.045, a + 0.9, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = mix(c, '#3a0060', 0.5); ctx.beginPath(); ctx.arc(cx, cy, s * 0.08, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // depth: light sheen from the top-left, darken toward the bottom
+  const sh = ctx.createRadialGradient(x + w * 0.2, y, 0, x + w * 0.2, y, Math.max(w, h) * 0.8);
+  sh.addColorStop(0, 'rgba(255,255,255,0.22)'); sh.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = sh; ctx.fillRect(x, y, w, h);
+  const dk = ctx.createLinearGradient(0, y, 0, y + h); dk.addColorStop(0, `rgba(0,0,0,${L.roleBgDim * 0.5})`); dk.addColorStop(1, `rgba(0,0,0,${Math.min(0.9, L.roleBgDim + 0.25)})`); ctx.fillStyle = dk; ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
 function drawPortrait(ctx, ch, x, y, w) {
   const St = proj.style, L = proj.layout, acc = ch.accent || St.accent;
   const px = x + 10, py = y + 12, pw = w - 20, ph = L.patchPortrait;
   const path = () => { ctx.beginPath(); if (St.corner === 'round') rr(ctx, px, py, pw, ph, 10); else if (St.corner === 'cut') { const k = 12; ctx.moveTo(px + k, py); ctx.lineTo(px + pw, py); ctx.lineTo(px + pw, py + ph - k); ctx.lineTo(px + pw - k, py + ph); ctx.lineTo(px, py + ph); ctx.lineTo(px, py + k); ctx.closePath(); } else ctx.rect(px, py, pw, ph); };
   ctx.save(); path();
   const g = ctx.createLinearGradient(0, py, 0, py + ph); g.addColorStop(0, mix(acc, '#000000', 0.3)); g.addColorStop(1, mix(acc, '#000000', 0.8)); ctx.fillStyle = g; ctx.fill(); ctx.clip();
+  if (roleOf(ch)) drawRoleBg(ctx, ch.role, acc, px, py, pw, ph);
   const im = getImg(ch.image);
   if (im) { const k = Math.max(pw / im.naturalWidth, ph / im.naturalHeight) * (ch.zoom || 1), iw = im.naturalWidth * k, ih = im.naturalHeight * k; ctx.drawImage(im, px + (pw - iw) / 2, py + (ph - ih) * (ch.focusY ?? 0.3), iw, ih); }
   else {
-    ctx.strokeStyle = rgba(acc, 0.2); ctx.lineWidth = 10; for (let i = -ph; i < pw + ph; i += 26) { ctx.beginPath(); ctx.moveTo(px + i, py + ph); ctx.lineTo(px + i + ph * 0.6, py); ctx.stroke(); }
+    if (!roleOf(ch)) ctx.strokeStyle = rgba(acc, 0.2); else ctx.strokeStyle = 'rgba(0,0,0,0)'; ctx.lineWidth = 10; for (let i = -ph; i < pw + ph; i += 26) { ctx.beginPath(); ctx.moveTo(px + i, py + ph); ctx.lineTo(px + i + ph * 0.6, py); ctx.stroke(); }
     const ini = (ch.name || '?').split(/\s+/).map(q => q[0] || '').join('').slice(0, 2).toUpperCase(), is = fitSize(ctx, ini, dispFont, ph * 0.55, pw * 0.6);
     ctx.globalAlpha = 0.45; text3D(ctx, ini, px + pw * 0.72, py + ph * 0.5 + is * 0.2, { size: is, color: acc, align: 'center', glow: 0 }); ctx.globalAlpha = 1;
   }
@@ -805,12 +860,13 @@ function drawCharacter(ctx, x, y, w, h) {
   ctx.save(); shapePath(ctx, x, y, w, h, 22);
   const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, mix(acc, '#000000', 0.35)); g.addColorStop(1, mix(acc, '#000000', 0.85)); ctx.fillStyle = g; ctx.fill();
   ctx.clip();
+  if (roleOf(ch)) drawRoleBg(ctx, ch.role, acc, x, y, w, h);
   const im = getImg(ch.image);
   if (im) {
     const z = ch.zoom || 1, k = Math.max(w / im.naturalWidth, h / im.naturalHeight) * z, iw = im.naturalWidth * k, ih = im.naturalHeight * k;
     ctx.drawImage(im, x + (w - iw) / 2, y + (h - ih) * (ch.focusY ?? 0.3), iw, ih);
   } else {
-    ctx.save(); ctx.strokeStyle = rgba(acc, 0.18); ctx.lineWidth = 14;
+    ctx.save(); ctx.strokeStyle = roleOf(ch) ? 'rgba(0,0,0,0)' : rgba(acc, 0.18); ctx.lineWidth = 14;
     for (let i = -h; i < w + h; i += 34) { ctx.beginPath(); ctx.moveTo(x + i, y + h); ctx.lineTo(x + i + h * 0.6, y); ctx.stroke(); }
     ctx.restore();
     const ini = (ch.name || '?').split(/\s+/).map(p => p[0] || '').join('').slice(0, 2).toUpperCase();
@@ -1120,7 +1176,7 @@ const STYLE_SPEC = [
   ['Palette', [['style.accent', 'Accent', 'color'], ['style.text', 'Text', 'color'], ['style.bg1', 'Background A', 'color'], ['style.bg2', 'Background B', 'color'], ['style.cardBg', 'Card fill', 'color'], ['style.cardText', 'Card text', 'color'], ['style.cardDim', 'Card muted', 'color'], ['style.outline', '3D outline', 'color']]],
   ['3D type', [['style.font', 'Display font', 'select', DISPLAY_FONTS.map(f => [f[0], f[0]])], ['style.body', 'Body font', 'select', BODY_FONTS.map(f => [f, f])], ['style.face', 'Face finish', 'select', [['gradient', 'Gradient'], ['chrome', 'Chrome'], ['flat', 'Flat']]], ['style.depth', 'Extrusion depth', 'range', 0, 14, 1], ['style.angle', 'Extrusion angle', 'range', 0, 180, 1], ['style.outlineW', 'Outline', 'range', 0, 6, 0.5], ['style.glow', 'Glow', 'range', 0, 40, 1]]],
   ['Panels & arrows', [['style.panel', 'Panel style', 'select', [['glass', 'Glass'], ['fill', 'Solid fill'], ['metal', 'Metal'], ['comic', 'Comic'], ['line', 'Minimal line']]], ['style.corner', 'Corners', 'select', [['cut', 'Cut'], ['round', 'Round'], ['sharp', 'Sharp']]], ['style.bgStyle', 'Backdrop', 'select', [['grid', 'Grid'], ['radial', 'Radial glow'], ['halftone', 'Halftone'], ['scan', 'Diagonal lines'], ['plain', 'Plain']]], ['style.cardAlpha', 'Card opacity', 'range', 0, 1, 0.05], ['style.patternOpacity', 'Arrow pattern', 'range', 0, 0.5, 0.01], ['style.patternSize', 'Arrow size', 'range', 14, 80, 1], ['style.patternTilt', 'Arrow tilt', 'range', -90, 90, 1]]],
-  ['Layout', [['layout.colWidth', 'Column width', 'range', 170, 360, 2], ['layout.perRow', 'Columns per row', 'range', 1, 12, 1], ['layout.minHeight', 'Min height', 'range', 300, 1400, 10], ['layout.showChar', 'Character panel', 'check'], ['layout.charWidth', 'Character width', 'range', 160, 440, 2], ['layout.showBanner', 'Title banner', 'check'], ['layout.bannerTitle', 'Banner title', 'text'], ['layout.bannerSub', 'Banner subtitle', 'text', 'Auto: name · dates'], ['layout.showSummary', 'Buff/nerf tally', 'check'], ['layout.showUpcoming', '“Upcoming” column', 'check'], ['layout.upcomingLabel', 'Upcoming label', 'text'], ['layout.footer', 'Footer / credit', 'text', '@yourhandle'], ['layout.patchTitle', 'Patch view title', 'text'], ['layout.patchPortrait', 'Patch view portrait height', 'range', 80, 320, 2]]],
+  ['Layout', [['layout.colWidth', 'Column width', 'range', 170, 360, 2], ['layout.perRow', 'Columns per row', 'range', 1, 12, 1], ['layout.minHeight', 'Min height', 'range', 300, 1400, 10], ['layout.showChar', 'Character panel', 'check'], ['layout.charWidth', 'Character width', 'range', 160, 440, 2], ['layout.showBanner', 'Title banner', 'check'], ['layout.bannerTitle', 'Banner title', 'text'], ['layout.bannerSub', 'Banner subtitle', 'text', 'Auto: name · dates'], ['layout.showSummary', 'Buff/nerf tally', 'check'], ['layout.showUpcoming', '“Upcoming” column', 'check'], ['layout.upcomingLabel', 'Upcoming label', 'text'], ['layout.footer', 'Footer / credit', 'text', '@yourhandle'], ['layout.roleBgScale', 'Role pattern size', 'range', 12, 80, 1], ['layout.roleBgDim', 'Role background darkness', 'range', 0, 0.8, 0.02], ['layout.patchTitle', 'Patch view title', 'text'], ['layout.patchPortrait', 'Patch view portrait height', 'range', 80, 320, 2]]],
   ['Big 3D numbers', [['layout.bigAuto', 'Single mode: big numbers for short stats', 'check'], ['layout.bigMaxRows', 'Max rows to go big', 'range', 1, 9, 1], ['layout.singleColWidth', 'Single column width', 'range', 260, 900, 2], ['layout.singleStamp', 'Single stamp size', 'range', 40, 150, 1], ['layout.heroScale', 'Number size', 'range', 0.5, 1.8, 0.05], ['layout.heroDepth', 'Thickness', 'range', 0, 3, 0.05], ['layout.heroTilt', 'Rotation', 'range', -20, 20, 0.5], ['layout.heroSkew', 'Slant', 'range', -30, 30, 1], ['layout.heroTurn', 'Turn (fake 3D yaw)', 'range', -40, 40, 1], ['layout.heroArrow', 'Arrow', 'select', [['chunky', 'Chunky arrow'], ['chevron', 'Double chevron'], ['none', 'No arrow']]], ['layout.heroBefore', 'Old value', 'select', [['dim', 'Muted'], ['color', 'Colored'], ['hide', 'Hidden']]], ['layout.heroDirIcon', 'Up/down marker after new value', 'check']]],
   ['Skill images', [['layout.iconSize', 'Skill image size', 'range', 32, 360, 1], ['layout.iconStyle', 'Skill image position', 'select', [['top', 'Above name'], ['side', 'Beside name']]], ['layout.autoBadge', 'Letter badges when no image', 'check']]],
   ['Stamps & details', [['layout.stampSize', 'Stamp size', 'range', 24, 90, 1], ['layout.stampTilt', 'Stamp tilt', 'range', -20, 20, 1], ['layout.stampPos', 'Stamp position', 'select', [['bottom', 'Bottom'], ['top', 'Under date']]], ['layout.labels.buff', 'Buff word', 'text'], ['layout.labels.nerf', 'Nerf word', 'text'], ['layout.labels.rework', 'Rework word', 'text'], ['layout.labels.adjust', 'Adjust word', 'text'], ['layout.strike', 'Strike old values', 'check'], ['layout.levelPrefix', 'Row label prefix', 'text']]]
