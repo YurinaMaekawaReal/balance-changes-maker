@@ -787,11 +787,11 @@ function drawRoleBg(ctx, role, c, x, y, w, h) {
   if (role === 'assault') {
     ctx.fillStyle = mix(c, '#ff7a00', 0.5);
     for (let j = 0; j * s < h + s; j++) for (let i = 0; i * s < w + s; i++) { ctx.beginPath(); rr(ctx, x + i * s + s * 0.22, y + j * s + s * 0.22, s * 0.56, s * 0.56, s * 0.08); ctx.fill(); }
-    ctx.fillStyle = rgba('#ffffff', 0.35);
+    ctx.fillStyle = rgba(mix(c, '#ffffff', 0.5), 0.35);
     for (let j = 0; j * s < h + s; j++) for (let i = 0; i * s < w + s; i++) ctx.fillRect(x + i * s + s * 0.22, y + j * s + s * 0.22, s * 0.56, s * 0.06);
   } else if (role === 'rapid') {
     const st = Math.max(4, s * 0.22);
-    for (let yy = y, k = 0; yy < y + h; yy += st, k++) { ctx.fillStyle = k % 2 ? mix(c, '#ffffff', 0.18) : mix(c, '#0060a0', 0.12); ctx.fillRect(x, yy, w, st * 0.5); }
+    for (let yy = y, k = 0; yy < y + h; yy += st, k++) { ctx.fillStyle = k % 2 ? mix(c, '#00e5ff', 0.4) : mix(c, '#0070b0', 0.22); ctx.fillRect(x, yy, w, st * 0.5); }
   } else if (role === 'strike') {
     const th = s * 0.866;
     for (let j = 0; j * th < h + th; j++) for (let i = -1; i * s < w + s; i++) {
@@ -819,9 +819,15 @@ function drawRoleBg(ctx, role, c, x, y, w, h) {
     }
   }
   // depth: light sheen from the top-left, darken toward the bottom
-  const sh = ctx.createRadialGradient(x + w * 0.2, y, 0, x + w * 0.2, y, Math.max(w, h) * 0.8);
-  sh.addColorStop(0, 'rgba(255,255,255,0.22)'); sh.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = sh; ctx.fillRect(x, y, w, h);
-  const dk = ctx.createLinearGradient(0, y, 0, y + h); dk.addColorStop(0, `rgba(0,0,0,${L.roleBgDim * 0.5})`); dk.addColorStop(1, `rgba(0,0,0,${Math.min(0.9, L.roleBgDim + 0.25)})`); ctx.fillStyle = dk; ctx.fillRect(x, y, w, h);
+  // shading uses 'multiply' with shades of the role color, so the colors stay saturated instead of turning gray
+  ctx.globalCompositeOperation = 'multiply';
+  const dk = ctx.createLinearGradient(0, y, 0, y + h);
+  dk.addColorStop(0, mix('#ffffff', mix(c, '#000000', 0.2), L.roleBgDim * 0.6));
+  dk.addColorStop(1, mix('#ffffff', mix(c, '#000000', 0.45), Math.min(1, L.roleBgDim + 0.35)));
+  ctx.fillStyle = dk; ctx.fillRect(x, y, w, h);
+  ctx.globalCompositeOperation = 'source-over';
+  const sh = ctx.createRadialGradient(x + w * 0.2, y, 0, x + w * 0.2, y, Math.max(w, h) * 0.6);
+  sh.addColorStop(0, rgba(mix(c, '#ffffff', 0.5), 0.12)); sh.addColorStop(1, rgba(c, 0)); ctx.fillStyle = sh; ctx.fillRect(x, y, w, h);
   ctx.restore();
 }
 function drawPortrait(ctx, ch, x, y, w) {
@@ -838,7 +844,7 @@ function drawPortrait(ctx, ch, x, y, w) {
     const ini = (ch.name || '?').split(/\s+/).map(q => q[0] || '').join('').slice(0, 2).toUpperCase(), is = fitSize(ctx, ini, dispFont, ph * 0.55, pw * 0.6);
     ctx.globalAlpha = 0.45; text3D(ctx, ini, px + pw * 0.72, py + ph * 0.5 + is * 0.2, { size: is, color: acc, align: 'center', glow: 0 }); ctx.globalAlpha = 1;
   }
-  const f = ctx.createLinearGradient(0, py + ph * 0.4, 0, py + ph); f.addColorStop(0, rgba(St.bg1, 0)); f.addColorStop(1, rgba(St.bg1, 0.92)); ctx.fillStyle = f; ctx.fillRect(px, py, pw, ph);
+  const fc = roleOf(ch) ? mix(acc, '#000000', 0.82) : St.bg1; const f = ctx.createLinearGradient(0, py + ph * 0.5, 0, py + ph); f.addColorStop(0, rgba(fc, 0)); f.addColorStop(1, rgba(fc, 0.9)); ctx.fillStyle = f; ctx.fillRect(px, py, pw, ph);
   ctx.restore();
   ctx.save(); path(); ctx.lineWidth = St.panel === 'comic' ? 3 : 1.5; ctx.strokeStyle = St.panel === 'comic' ? '#000' : rgba(acc, 0.85); ctx.stroke(); ctx.restore();
   const ri = roleOf(ch) && getImg(roleOf(ch).icon); if (ri) { const rs = Math.min(44, ph * 0.32); ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 8; ctx.drawImage(ri, px + 8, py + 8, rs, rs); ctx.restore(); }
@@ -865,7 +871,7 @@ function drawCharacter(ctx, x, y, w, h) {
     ctx.save(); ctx.globalAlpha = 0.55; text3D(ctx, ini, x + w / 2, y + h * 0.42 + is * 0.36, { size: is, color: acc, align: 'center', glow: 0 }); ctx.restore();
     ctx.save(); ctx.font = bodyFont(11, 600); ctx.fillStyle = rgba('#ffffff', 0.4); ctx.textAlign = 'center'; ctx.fillText('Add character art in Content › Character', x + w / 2, y + h * 0.42 + is * 0.36 + 34, w - 20); ctx.restore();
   }
-  const f = ctx.createLinearGradient(0, y + h * 0.5, 0, y + h); f.addColorStop(0, rgba(St.bg1, 0)); f.addColorStop(1, rgba(St.bg1, 0.96)); ctx.fillStyle = f; ctx.fillRect(x, y, w, h);
+  const fc = roleOf(ch) ? mix(acc, '#000000', 0.82) : St.bg1; const f = ctx.createLinearGradient(0, y + h * 0.55, 0, y + h); f.addColorStop(0, rgba(fc, 0)); f.addColorStop(1, rgba(fc, 0.95)); ctx.fillStyle = f; ctx.fillRect(x, y, w, h);
   // corner arrow emblem
   const ri = roleOf(ch) && getImg(roleOf(ch).icon);
   if (ri) { const rs = Math.min(64, w * 0.26); ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 10; ctx.drawImage(ri, x + 14, y + 14, rs, rs); ctx.restore(); }
