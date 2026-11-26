@@ -284,7 +284,7 @@ function normalize(p) {
   // one project holds many characters; older single-character files are migrated
   if (!Array.isArray(p.characters)) { p.characters = [Object.assign({}, p.character || {}, { sessions: p.sessions || [] })].concat(p.extraCharacters || []); }
   delete p.character; delete p.sessions; delete p.extraCharacters;
-  p.characters = p.characters.map(c => Object.assign({ name: 'Character', subtitle: '', tag: '', accent: '#7d8bff', image: '', focusY: 0.3, zoom: 1 }, c, { id: c.id || uid(), sessions: Array.isArray(c.sessions) ? c.sessions : [] }));
+  p.characters = p.characters.map(c => Object.assign({ name: 'Character', subtitle: '', tag: '', accent: '#7d8bff', image: '', focusX: 0.5, focusY: 0.3, zoom: 1 }, c, { id: c.id || uid(), sessions: Array.isArray(c.sessions) ? c.sessions : [] }));
   if (!p.characters.length) p.characters.push({ id: uid(), name: 'New Character', subtitle: '', tag: '', accent: '#7d8bff', image: '', focusY: 0.3, zoom: 1, sessions: [] });
   const oldRole = { strike: '#ff1e1e', assault: '#ffd400', support: '#1ee83a', technical: '#c914c9' };
   p.characters.forEach(c => { if (c.role && oldRole[c.role] && String(c.accent).toLowerCase() === oldRole[c.role]) c.accent = ROLES[c.role].color; });
@@ -840,7 +840,7 @@ function drawPortrait(ctx, ch, x, y, w) {
   const g = ctx.createLinearGradient(0, py, 0, py + ph); g.addColorStop(0, mix(acc, '#000000', 0.3)); g.addColorStop(1, mix(acc, '#000000', 0.8)); ctx.fillStyle = g; ctx.fill(); ctx.clip();
   if (roleOf(ch)) drawRoleBg(ctx, ch.role, acc, px, py, pw, ph);
   const im = getImg(ch.image);
-  if (im) { const k = Math.max(pw / im.naturalWidth, ph / im.naturalHeight) * (ch.zoom || 1), iw = im.naturalWidth * k, ih = im.naturalHeight * k; ctx.drawImage(im, px + (pw - iw) / 2, py + (ph - ih) * (ch.focusY ?? 0.3), iw, ih); }
+  if (im) { const k = Math.max(pw / im.naturalWidth, ph / im.naturalHeight) * (ch.zoom || 1), iw = im.naturalWidth * k, ih = im.naturalHeight * k; ctx.drawImage(im, px + (pw - iw) * (ch.focusX ?? 0.5), py + (ph - ih) * (ch.focusY ?? 0.3), iw, ih); }
   else {
     if (!roleOf(ch)) ctx.strokeStyle = rgba(acc, 0.2); else ctx.strokeStyle = 'rgba(0,0,0,0)'; ctx.lineWidth = 10; for (let i = -ph; i < pw + ph; i += 26) { ctx.beginPath(); ctx.moveTo(px + i, py + ph); ctx.lineTo(px + i + ph * 0.6, py); ctx.stroke(); }
     const ini = (ch.name || '?').split(/\s+/).map(q => q[0] || '').join('').slice(0, 2).toUpperCase(), is = fitSize(ctx, ini, dispFont, ph * 0.55, pw * 0.6);
@@ -863,7 +863,7 @@ function drawCharacter(ctx, x, y, w, h) {
   const im = getImg(ch.image);
   if (im) {
     const z = ch.zoom || 1, k = Math.max(w / im.naturalWidth, h / im.naturalHeight) * z, iw = im.naturalWidth * k, ih = im.naturalHeight * k;
-    ctx.drawImage(im, x + (w - iw) / 2, y + (h - ih) * (ch.focusY ?? 0.3), iw, ih);
+    ctx.drawImage(im, x + (w - iw) * (ch.focusX ?? 0.5), y + (h - ih) * (ch.focusY ?? 0.3), iw, ih);
   } else {
     ctx.save(); ctx.strokeStyle = roleOf(ch) ? 'rgba(0,0,0,0)' : rgba(acc, 0.18); ctx.lineWidth = 14;
     for (let i = -h; i < w + h; i += 34) { ctx.beginPath(); ctx.moveTo(x + i, y + h); ctx.lineTo(x + i + h * 0.6, y); ctx.stroke(); }
@@ -1066,7 +1066,7 @@ function renderChar() {
         el('div', { class: 'grid2' }, field('Tag (optional)', tInput(ch, 'tag', { id: 'ch-tag', ph: roleOf(ch) ? 'Shows role name' : 'Class, rarity…' })), field('Background color', col)));
     })(),
     el('div', { class: 'ghead' }, thumb, fileBtn(ch.image ? 'Replace art' : 'Upload art', d => { ch.image = d; renderChar(); changed(); }), ch.image ? el('button', { class: 'btn sm danger', type: 'button', onclick: () => { ch.image = ''; renderChar(); changed(); } }, 'Remove') : null),
-    ch.image ? el('div', { class: 'grid2' }, field('Vertical focus', range('character.focusY', 0, 1, 0.01, 'ch-fy')), field('Zoom', range('character.zoom', 1, 2.5, 0.05, 'ch-z'))) : ''
+    ch.image ? el('div', { class: 'grid2' }, field('Horizontal focus', range('character.focusX', 0, 1, 0.01, 'ch-fx')), field('Vertical focus', range('character.focusY', 0, 1, 0.01, 'ch-fy')), field('Zoom', range('character.zoom', 1, 2.5, 0.05, 'ch-z'))) : ''
   );
 }
 
