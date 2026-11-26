@@ -110,6 +110,8 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .view{flex:1;min-height:320px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:16px;
   background-color:#07080c;background-image:linear-gradient(45deg,#0d0f15 25%,transparent 25%,transparent 75%,#0d0f15 75%),linear-gradient(45deg,#0d0f15 25%,transparent 25%,transparent 75%,#0d0f15 75%);background-size:22px 22px;background-position:0 0,11px 11px}
 .view canvas{display:block;margin:0 auto;box-shadow:0 18px 60px rgba(0,0,0,.6)}
+.meta.save{color:var(--dim)}
+.meta.save.bad{color:var(--warn)}
 .meta{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
 
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);padding:9px 14px;border-radius:5px;font-weight:600;z-index:50;max-width:calc(100% - 32px)}
@@ -182,6 +184,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
         <button data-z="1" aria-pressed="false">100%</button>
       </div>
       <span class="grow"></span>
+      <span class="meta save" id="saveState" role="status"></span>
       <span class="meta" id="meta"></span>
       <button class="btn primary" id="exportBtn">Export PNG</button>
     </div>
@@ -312,12 +315,105 @@ function normalize(p) {
   Object.defineProperty(p, 'sessions', { get() { return this.characters[this.active].sessions; }, configurable: true, enumerable: false });
   p.characters.forEach(c => c.sessions.forEach(s => { s.id = s.id || uid(); s.groups = s.groups || []; s.groups.forEach(g => { g.id = g.id || uid(); g.items = g.items || []; g.items.forEach(it => { it.id = it.id || uid(); if (it.type === 'stat') it.rows = it.rows || []; }); }); }));
 }
-let saveT, warnedStore = false;
-function scheduleSave() {
-  clearTimeout(saveT);
-  saveT = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(proj)); } catch (e) { if (!warnedStore) { warnedStore = true; toast('Autosave is full (large images). Use Export › Save project file to keep your work.'); } } }, 400);
+/* ---------- autosave ----------
+   1. This browser: IndexedDB (room for large images), localStorage as a fallback.
+   2. Your claude.ai account (when the page runs in claude.ai): the project JSON is kept in
+      private per-user documents, images in the artifact's asset storage. The newest save wins on load. */
+const SV = { db: null, uid: null, assets: null, busy: false, again: false, touched: false, assetMap: new Map(), localOk: true, cloudOk: null, lastAt: 0 };
+let saveT = 0;
+function idb() {
+  return new Promise((res, rej) => {
+    try { const r = indexedDB.open('patch-forge', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); }
+  });
 }
+async function idbGet(k) { const d = await idb(); return new Promise((res, rej) => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+async function idbSet(k, v) { const d = await idb(); return new Promise((res, rej) => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); }
+function setSaveState(text, bad) { const e = $('#saveState'); if (!e) return; e.textContent = text; e.classList.toggle('bad', !!bad); }
+function timeStr(t) { return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function scheduleSave() { SV.touched = true; clearTimeout(saveT); setSaveState('Unsaved changes…'); saveT = setTimeout(saveNow, 1200); }
 function changed() { redraw(); scheduleSave(); }
+function imageFields(p, fn) { p.characters.forEach(c => { fn(c, 'image'); c.sessions.forEach(s => s.groups.forEach(g => fn(g, 'icon'))); }); }
+async function dataUrlToBlob(u) { return (await fetch(u)).blob(); }
+function blobToDataUrl(b) { return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); }); }
+async function saveNow() {
+  clearTimeout(saveT);
+  if (SV.busy) { SV.again = true; return; }
+  SV.busy = true;
+  proj.savedAt = Date.now();
+  const json = JSON.stringify(proj);
+  try { await idbSet('project', json); SV.localOk = true; }
+  catch (e) { try { localStorage.setItem(STORE, json); SV.localOk = true; } catch (e2) { SV.localOk = false; } }
+  if (SV.db && SV.uid) {
+    try {
+      // images go to asset storage once; the saved JSON points at them
+      const cloud = JSON.parse(json);
+      const jobs = [];
+      imageFields(cloud, (o, k) => {
+        const v = o[k]; if (typeof v !== 'string' || !v.startsWith('data:')) return;
+        if (SV.assetMap.has(v)) { o[k] = SV.assetMap.get(v); return; }
+        if (!SV.assets) return;
+        jobs.push((async () => { const r = await SV.assets.upload(await dataUrlToBlob(v)); SV.assetMap.set(v, r.url); o[k] = r.url; })());
+      });
+      await Promise.all(jobs);
+      const str = JSON.stringify(cloud), N = 180000, chunks = Math.max(1, Math.ceil(str.length / N));
+      const base = `data/users/${SV.uid}/`;
+      for (let i = 0; i < chunks; i++) await SV.db.doc(`${base}pf_chunk_${i}`).set({ i, part: str.slice(i * N, (i + 1) * N) });
+      await SV.db.doc(`${base}pf_head`).set({ v: 1, savedAt: proj.savedAt, chunks });
+      SV.cloudOk = true;
+    } catch (e) { SV.cloudOk = false; console.warn('Cloud save failed', e && e.code); }
+  }
+  SV.lastAt = proj.savedAt;
+  if (SV.cloudOk) setSaveState(`Saved to your account · ${timeStr(SV.lastAt)}`);
+  else if (SV.localOk) setSaveState(SV.cloudOk === false ? `Saved in this browser only · ${timeStr(SV.lastAt)}` : `Saved in this browser · ${timeStr(SV.lastAt)}`, SV.cloudOk === false);
+  else { setSaveState('Not saved — use Export › Save project', true); toast('Autosave failed. Use Export › Save project (.json) to keep your work.'); }
+  SV.busy = false;
+  if (SV.again) { SV.again = false; saveNow(); }
+}
+async function adoptLoaded(p, source) {
+  if (SV.touched) return; // the viewer already started editing; their newer work will save over this
+  setProj(p); renderAll(); ensureFonts(); redraw();
+  SV.lastAt = p.savedAt || 0;
+  setSaveState(`Loaded from ${source} · ${timeStr(SV.lastAt || Date.now())}`);
+}
+async function startSaving() {
+  // 1) this browser
+  try {
+    const raw = await idbGet('project');
+    if (raw) { const p = JSON.parse(raw); if (p && (p.savedAt || 0) > (proj.savedAt || 0)) await adoptLoaded(p, 'this browser'); }
+  } catch (e) { }
+  if (!SV.touched) setSaveState(proj.savedAt ? `Saved in this browser · ${timeStr(proj.savedAt)}` : 'Autosave on');
+  // 2) your claude.ai account
+  if (!(window.claude && window.claude.use)) return;
+  const [db, user, assets] = await Promise.all(['db', 'user', 'assets'].map(n => window.claude.use(n).catch(() => null)));
+  if (!db || !user) return;
+  let uid = null; try { uid = await user.id(); } catch (e) { }
+  if (!uid) return;
+  SV.db = db; SV.uid = uid; SV.assets = assets;
+  try {
+    const head = await Promise.race([db.doc(`data/users/${uid}/pf_head`).get(), new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), 10000))]);
+    const h = head.exists ? head.data() : null;
+    if (h && h.savedAt > (proj.savedAt || 0) && !SV.touched) {
+      setSaveState('Loading your saved project…');
+      const parts = [];
+      for (let i = 0; i < h.chunks; i++) { const d = await db.doc(`data/users/${uid}/pf_chunk_${i}`).get(); parts.push(d.exists ? String(d.data().part || '') : ''); }
+      const p = JSON.parse(parts.join(''));
+      // bring images back as data URLs so drawing and PNG export stay clean
+      const jobs = [];
+      imageFields(p, (o, k) => {
+        const v = o[k]; if (typeof v !== 'string' || !v || v.startsWith('data:')) return;
+        jobs.push((async () => { try { const du = await blobToDataUrl(await (await fetch(v)).blob()); SV.assetMap.set(du, v); o[k] = du; } catch (e) { } })());
+      });
+      await Promise.all(jobs);
+      await adoptLoaded(p, 'your account');
+      try { await idbSet('project', JSON.stringify(proj)); } catch (e) { }
+    } else if (!SV.touched) {
+      // nothing newer in the account yet: upload what this browser has
+      saveNow();
+    }
+  } catch (e) { SV.cloudOk = false; setSaveState('Saved in this browser only', true); }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && saveT) saveNow(); });
+
 
 /* images */
 const imgCache = new Map();
@@ -1512,5 +1608,5 @@ function openImport(t) {
 
 function renderAll() { renderChar(); renderSessionsEd(); refreshJump(); renderStylePane(); renderExportPane(); renderPresetChips(); syncMode(); }
 window.addEventListener('resize', () => { if (zoom === 'fit') redraw(); });
-renderAll(); redraw(); ensureFonts(); document.fonts.ready.then(redraw);
+renderAll(); redraw(); ensureFonts(); document.fonts.ready.then(redraw); startSaving();
 </script>

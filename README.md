@@ -17,4 +17,4 @@ Open `index.html` in any modern browser. Everything runs locally; no build step 
 - **3D type controls** — depth, angle, outline, glow, face finish, plus rotation / slant / turn for the big numbers.
 - **Jump to a change** — click any stat on the preview (or use the jump list) to open it in the editor.
 - **Read values from a screenshot** — on any stat or ability, upload or paste a screenshot, describe which part to read, review what Claude extracted, then apply. This uses Claude through claude.ai, so it only works in the claude.ai-hosted version of the app.
-- **Export** — PNG at 1×–4×; save and load the whole project as `.json`. Work autosaves in the browser.
+- **Export** — PNG at 1×–4×; save and load the whole project as `.json`. Work autosaves in the browser (IndexedDB) and, in the claude.ai version, to your claude.ai account.
