@@ -1070,6 +1070,8 @@ function renderCharPick() {
       c.sessions.push(sess(pk ? pk.label : 'Patch 1.0', 'buff', [grp('Ability', [stat('Damage', [{ label: proj.layout.levelPrefix + ' 1', before: '100', after: '110' }])])]));
       proj.characters.push(c); proj.active = proj.characters.length - 1; openSet.add(c.sessions[0].id); renderChar(); renderSessionsEd(); changed();
     } }, '+ New'),
+    ib('↑', 'Move character earlier (left in Patch view)', () => { if (proj.active > 0) { move(proj.characters, proj.active, -1); proj.active--; renderChar(); changed(); } }),
+    ib('↓', 'Move character later (right in Patch view)', () => { if (proj.active < proj.characters.length - 1) { move(proj.characters, proj.active, 1); proj.active++; renderChar(); changed(); } }),
     ib('⧉', 'Duplicate character', () => { const c = clone(proj.character); c.id = uid(); c.name += ' copy'; c.sessions.forEach(s => { s.id = uid(); s.groups.forEach(g => { g.id = uid(); g.items.forEach(i => i.id = uid()); }); }); proj.characters.splice(proj.active + 1, 0, c); proj.active++; renderChar(); renderSessionsEd(); changed(); }),
     proj.characters.length > 1 ? delBtn(() => { proj.characters.splice(proj.active, 1); proj.active = Math.max(0, proj.active - 1); renderChar(); renderSessionsEd(); changed(); }) : null);
 }
