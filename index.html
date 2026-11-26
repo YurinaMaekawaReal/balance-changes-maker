@@ -239,7 +239,7 @@ function sampleProject() {
     v: 1,
     character: { name: 'Tsuyu Asui', subtitle: 'Default costume', tag: '', role: 'rapid', accent: '#00cbe6', image: '', focusY: 0.3, zoom: 1 },
     style: Object.assign({ key: 'neon' }, clone(PRESETS.neon)),
-    layout: { mode: 'multi', single: 0, colWidth: 232, perRow: 9, minHeight: 640, showChar: true, charWidth: 260, showBanner: true, bannerTitle: 'Balance History', bannerSub: '', showSummary: true, showUpcoming: true, upcomingLabel: 'Upcoming', stampSize: 46, stampTilt: -6, stampPos: 'bottom', iconSize: 64, autoBadge: true, strike: true, levelPrefix: 'Level', footer: '', scale: '2', iconStyle: 'top', singleColWidth: 440, singleStamp: 92, bigAuto: true, bigMaxRows: 3, heroScale: 1, heroDepth: 1.2, heroTilt: -4, heroSkew: -8, heroTurn: 0, heroArrow: 'chunky', heroBefore: 'dim', heroDirIcon: true, patch: '', patchTitle: 'Patch Notes', patchPortrait: 150, roleBgScale: 30, roleBgDim: 0.3, labels: { buff: 'BUFF', nerf: 'NERF', rework: 'REWORK', adjust: 'ADJUST' } },
+    layout: { mode: 'multi', single: 0, colWidth: 232, perRow: 9, minHeight: 640, showChar: true, charWidth: 260, showBanner: true, bannerTitle: 'Balance History', bannerSub: '', showSummary: true, showUpcoming: true, upcomingLabel: 'Upcoming', stampSize: 46, stampTilt: -6, stampPos: 'bottom', iconSize: 64, autoBadge: true, strike: true, levelPrefix: 'Level', footer: '', scale: '2', iconStyle: 'top', singleColWidth: 440, singleStamp: 92, bigAuto: true, bigMaxRows: 3, heroScale: 1, heroDepth: 1.2, heroTilt: -4, heroSkew: -8, heroTurn: 0, heroArrow: 'chunky', heroBefore: 'dim', heroDirIcon: true, patch: '', patchTitle: 'Patch Notes', patchPortrait: 150, subShow: true, subPos: 'above', subSize: 0.55, subFont: 'display', subCase: 'asis', subColor: 'name', subCustom: '#ffffff', subDepth: 1, subOutline: true, subGlow: false, subSpacing: 0, subGap: 4, subOpacity: 1, roleBgScale: 30, roleBgDim: 0.3, labels: { buff: 'BUFF', nerf: 'NERF', rework: 'REWORK', adjust: 'ADJUST' } },
     sessions: [
       sess('Oct 12, 2023', 'nerf', [grp('Stealth Skill', [stat('Duration', lv([['12s', '5s'], ['13s', '8.5s'], ['14.2s', '12s']]))])]),
       sess('Nov 8, 2023', 'nerf', [
@@ -832,6 +832,36 @@ function drawRoleBg(ctx, role, c, x, y, w, h) {
   sh.addColorStop(0, rgba(mix(c, '#ffffff', 0.5), 0.12)); sh.addColorStop(1, rgba(c, 0)); ctx.fillStyle = sh; ctx.fillRect(x, y, w, h);
   ctx.restore();
 }
+/* character name + subtitle block; returns the y just above the block (for the tag chip) */
+function subtitleText(ch) {
+  const L = proj.layout, t = String(ch.subtitle || '');
+  return L.subCase === 'upper' ? t.toUpperCase() : L.subCase === 'lower' ? t.toLowerCase() : L.subCase === 'title' ? t.replace(/\b\w/g, m => m.toUpperCase()) : t;
+}
+function drawNameBlock(ctx, ch, x, bottom, maxW, maxName, nameColor) {
+  const St = proj.style, L = proj.layout, name = ch.name || '';
+  const ns = fitSize(ctx, name, dispFont, maxName, maxW);
+  const sub = L.subShow ? subtitleText(ch) : '';
+  const subFontFn = L.subFont === 'body' ? (z => bodyFont(z, 700)) : dispFont;
+  const ss = sub ? fitSize(ctx, sub, subFontFn, Math.max(8, ns * L.subSize), maxW, L.subSpacing) : 0;
+  const subColor = L.subColor === 'text' ? St.text : L.subColor === 'accent' ? St.accent : L.subColor === 'role' ? (ch.accent || St.accent) : L.subColor === 'custom' ? L.subCustom : nameColor;
+  const drawSub = yy => {
+    ctx.save(); ctx.globalAlpha = L.subOpacity;
+    text3D(ctx, sub, x, yy, { size: ss, font: subFontFn(ss), color: subColor, depth: St.depth * ss / 40 * L.subDepth, glow: L.subGlow ? St.glow * 0.6 : 0, outlineW: L.subOutline ? undefined : 0, face: L.subDepth > 0 ? undefined : 'flat', spacing: L.subSpacing, bevel: L.subDepth > 0 });
+    ctx.restore();
+  };
+  let top;
+  if (sub && L.subPos === 'below') {
+    const nameY = bottom - ss * 0.8 - L.subGap - 4;
+    text3D(ctx, name, x, nameY, { size: ns, color: nameColor, align: 'left' });
+    drawSub(bottom);
+    top = nameY - ns * 0.8;
+  } else {
+    text3D(ctx, name, x, bottom, { size: ns, color: nameColor, align: 'left' });
+    top = bottom - ns * 0.8;
+    if (sub) { const sy = top - L.subGap - 4; drawSub(sy); top = sy - ss * 0.8; }
+  }
+  return top;
+}
 function drawPortrait(ctx, ch, x, y, w) {
   const St = proj.style, L = proj.layout, acc = ch.accent || St.accent;
   const px = x + 10, py = y + 12, pw = w - 20, ph = L.patchPortrait;
@@ -850,9 +880,7 @@ function drawPortrait(ctx, ch, x, y, w) {
   ctx.restore();
   ctx.save(); path(); ctx.lineWidth = St.panel === 'comic' ? 3 : 1.5; ctx.strokeStyle = St.panel === 'comic' ? '#000' : rgba(acc, 0.85); ctx.stroke(); ctx.restore();
   const ri = roleOf(ch) && getImg(roleOf(ch).icon); if (ri) { const rs = Math.min(44, ph * 0.32); ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 8; ctx.drawImage(ri, px + 8, py + 8, rs, rs); ctx.restore(); }
-  const ns = fitSize(ctx, ch.name || '', dispFont, 28, pw - 24);
-  text3D(ctx, ch.name || '', px + 12, py + ph - 14, { size: ns, color: mix(acc, '#ffffff', 0.3) });
-  if (ch.subtitle) { const t = ch.subtitle.toUpperCase(), fs = fitSize(ctx, t, z => bodyFont(z, 600), 11.5, pw - 24, 1.5); ctx.save(); ctx.font = bodyFont(fs, 600); setLS(ctx, 1.5); ctx.textAlign = 'left'; ctx.fillStyle = rgba(St.text, 0.85); ctx.fillText(t, px + 12, py + ph - 20 - ns); ctx.restore(); }
+  drawNameBlock(ctx, ch, px + 12, py + ph - 14, pw - 24, 28, mix(acc, '#ffffff', 0.3));
 }
 function drawCharacter(ctx, x, y, w, h) {
   const St = proj.style, ch = proj.character, acc = ch.accent || St.accent;
@@ -881,12 +909,7 @@ function drawCharacter(ctx, x, y, w, h) {
   ctx.restore();
   ctx.save(); shapePath(ctx, x, y, w, h, 22); ctx.lineWidth = St.panel === 'comic' ? 4 : 1.6; ctx.strokeStyle = St.panel === 'comic' ? '#000' : rgba(acc, 0.8); ctx.stroke(); ctx.restore();
   // name block
-  const name = ch.name || '';
-  const ns = fitSize(ctx, name, dispFont, 40, w - 34);
-  let ny = y + h - 24;
-  text3D(ctx, name, x + 18, ny, { size: ns, color: acc === St.text ? St.text : mix(acc, '#ffffff', 0.25), align: 'left' });
-  ny -= ns + 6;
-  if (ch.subtitle) { const t = ch.subtitle.toUpperCase(), fs = fitSize(ctx, t, z => bodyFont(z, 600), 13, w - 36, 1.5); ctx.save(); ctx.font = bodyFont(fs, 600); setLS(ctx, 1.5); ctx.textAlign = 'left'; ctx.fillStyle = rgba(St.text, 0.8); ctx.fillText(t, x + 18, ny); ctx.restore(); ny -= 24; }
+  const ny = drawNameBlock(ctx, ch, x + 18, y + h - 24, w - 36, 40, acc === St.text ? St.text : mix(acc, '#ffffff', 0.25)) - 6;
   const tagText = ch.tag || (roleOf(ch) ? roleOf(ch).label : '');
   if (tagText) {
     ctx.save(); ctx.font = bodyFont(11.5); setLS(ctx, 1.8); const t = tagText.toUpperCase(), tw = ctx.measureText(t).width + 18;
@@ -1178,6 +1201,7 @@ const STYLE_SPEC = [
   ['Layout', [['layout.colWidth', 'Column width', 'range', 170, 360, 2], ['layout.perRow', 'Columns per row', 'range', 1, 12, 1], ['layout.minHeight', 'Min height', 'range', 300, 1400, 10], ['layout.showChar', 'Character panel', 'check'], ['layout.charWidth', 'Character width', 'range', 160, 440, 2], ['layout.showBanner', 'Title banner', 'check'], ['layout.bannerTitle', 'Banner title', 'text'], ['layout.bannerSub', 'Banner subtitle', 'text', 'Auto: name · dates'], ['layout.showSummary', 'Buff/nerf tally', 'check'], ['layout.showUpcoming', '“Upcoming” column', 'check'], ['layout.upcomingLabel', 'Upcoming label', 'text'], ['layout.footer', 'Footer / credit', 'text', '@yourhandle'], ['layout.roleBgScale', 'Role pattern size', 'range', 12, 80, 1], ['layout.roleBgDim', 'Role background darkness', 'range', 0, 0.8, 0.02], ['layout.patchTitle', 'Patch view title', 'text'], ['layout.patchPortrait', 'Patch view portrait height', 'range', 80, 320, 2]]],
   ['Big 3D numbers', [['layout.bigAuto', 'Single mode: big numbers for short stats', 'check'], ['layout.bigMaxRows', 'Max rows to go big', 'range', 1, 9, 1], ['layout.singleColWidth', 'Single column width', 'range', 260, 900, 2], ['layout.singleStamp', 'Single stamp size', 'range', 40, 150, 1], ['layout.heroScale', 'Number size', 'range', 0.5, 1.8, 0.05], ['layout.heroDepth', 'Thickness', 'range', 0, 3, 0.05], ['layout.heroTilt', 'Rotation', 'range', -20, 20, 0.5], ['layout.heroSkew', 'Slant', 'range', -30, 30, 1], ['layout.heroTurn', 'Turn (fake 3D yaw)', 'range', -40, 40, 1], ['layout.heroArrow', 'Arrow', 'select', [['chunky', 'Chunky arrow'], ['chevron', 'Double chevron'], ['none', 'No arrow']]], ['layout.heroBefore', 'Old value', 'select', [['dim', 'Muted'], ['color', 'Colored'], ['hide', 'Hidden']]], ['layout.heroDirIcon', 'Up/down marker after new value', 'check']]],
   ['Skill images', [['layout.iconSize', 'Skill image size', 'range', 32, 360, 1], ['layout.iconStyle', 'Skill image position', 'select', [['top', 'Above name'], ['side', 'Beside name']]], ['layout.autoBadge', 'Letter badges when no image', 'check']]],
+  ['Character subtitle', [['layout.subShow', 'Show subtitle', 'check'], ['layout.subPos', 'Position', 'select', [['above', 'Above name'], ['below', 'Below name']]], ['layout.subSize', 'Size (× name)', 'range', 0.2, 1, 0.01], ['layout.subGap', 'Gap from name', 'range', -10, 40, 1], ['layout.subFont', 'Font', 'select', [['display', 'Name font'], ['body', 'Body font']]], ['layout.subCase', 'Letter case', 'select', [['asis', 'As typed'], ['upper', 'UPPERCASE'], ['lower', 'lowercase'], ['title', 'Title Case']]], ['layout.subColor', 'Color', 'select', [['name', 'Same as name'], ['role', 'Role color'], ['text', 'Text color'], ['accent', 'Accent'], ['custom', 'Custom']]], ['layout.subCustom', 'Custom color', 'color'], ['layout.subDepth', '3D depth (× name)', 'range', 0, 2, 0.05], ['layout.subSpacing', 'Letter spacing', 'range', -2, 10, 0.5], ['layout.subOpacity', 'Opacity', 'range', 0.2, 1, 0.05], ['layout.subOutline', 'Outline', 'check'], ['layout.subGlow', 'Glow', 'check']]],
   ['Stamps & details', [['layout.stampSize', 'Stamp size', 'range', 24, 90, 1], ['layout.stampTilt', 'Stamp tilt', 'range', -20, 20, 1], ['layout.stampPos', 'Stamp position', 'select', [['bottom', 'Bottom'], ['top', 'Under date']]], ['layout.labels.buff', 'Buff word', 'text'], ['layout.labels.nerf', 'Nerf word', 'text'], ['layout.labels.rework', 'Rework word', 'text'], ['layout.labels.adjust', 'Adjust word', 'text'], ['layout.strike', 'Strike old values', 'check'], ['layout.levelPrefix', 'Row label prefix', 'text']]]
 ];
 function renderStylePane() {
@@ -1190,14 +1214,18 @@ function renderStylePane() {
     const g = el('div', { class: 'grid2' });
     items.forEach(([path, label, type, a, b, c]) => {
       const id = 'st-' + path.replace(/\./g, '-'); let ctl;
-      if (type === 'color') { ctl = el('input', { type: 'color', id }); ctl.value = getPath(path); ctl.addEventListener('input', () => { setPath(path, ctl.value); proj.style.key = 'custom'; changed(); renderSessionDots(); }); }
-      else if (type === 'select') { ctl = el('select', { id }); a.forEach(([v, l]) => ctl.append(el('option', { value: v }, l))); ctl.value = getPath(path); ctl.addEventListener('change', () => { setPath(path, ctl.value); proj.style.key = 'custom'; ensureFonts(); changed(); }); }
+      if (type === 'color') { ctl = el('input', { type: 'color', id }); ctl.value = getPath(path); ctl.addEventListener('input', () => { setPath(path, ctl.value); if (path.startsWith('style.')) { proj.style.key = 'custom'; } changed(); renderSessionDots(); }); }
+      else if (type === 'select') { ctl = el('select', { id }); a.forEach(([v, l]) => ctl.append(el('option', { value: v }, l))); ctl.value = getPath(path); ctl.addEventListener('change', () => { setPath(path, ctl.value); if (path.startsWith('style.')) proj.style.key = 'custom'; ensureFonts(); changed(); }); }
       else if (type === 'range') ctl = range(path, a, b, c, id);
       else if (type === 'text') { ctl = el('input', { type: 'text', id, placeholder: a || '' }); ctl.value = getPath(path) ?? ''; ctl.addEventListener('input', () => { setPath(path, ctl.value); changed(); }); }
       else if (type === 'check') { const cb = el('input', { type: 'checkbox', id }); cb.checked = !!getPath(path); cb.addEventListener('change', () => { setPath(path, cb.checked); changed(); }); g.append(el('label', { class: 'chk', style: 'grid-column:span 2' }, cb, label)); return; }
       g.append(field(label, ctl));
     });
-    pane.append(el('div', { class: 'sec' }, el('h2', {}, title), g));
+    const extra = title === 'Character subtitle' ? el('div', { class: 'tools', style: 'margin-bottom:10px' }, el('span', { class: 'hint' }, 'Quick looks:'),
+      el('button', { class: 'btn sm', type: 'button', onclick: () => { Object.assign(proj.layout, { subPos: 'above', subSize: 0.55, subFont: 'display', subCase: 'asis', subColor: 'name', subDepth: 1, subOutline: true, subGlow: false, subSpacing: 0, subGap: 4, subOpacity: 1 }); renderStylePane(); changed(); } }, 'Smaller name'),
+      el('button', { class: 'btn sm', type: 'button', onclick: () => { Object.assign(proj.layout, { subPos: 'above', subSize: 0.33, subFont: 'body', subCase: 'upper', subColor: 'text', subDepth: 0, subOutline: false, subGlow: false, subSpacing: 1.5, subGap: 6, subOpacity: 0.85 }); renderStylePane(); changed(); } }, 'Small label'),
+      el('button', { class: 'btn sm', type: 'button', onclick: () => { Object.assign(proj.layout, { subPos: 'below', subSize: 0.5, subFont: 'display', subCase: 'upper', subColor: 'role', subDepth: 0.8, subOutline: true, subGlow: true, subSpacing: 2, subGap: 6, subOpacity: 1 }); renderStylePane(); changed(); } }, 'Glowing tagline')) : null;
+    pane.append(el('div', { class: 'sec' }, el('h2', {}, title), extra, g));
   });
 }
 function renderSessionDots() { renderSessionsEd(); }
