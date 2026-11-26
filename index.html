@@ -478,7 +478,8 @@ const colW = () => isSingle() ? proj.layout.singleColWidth : proj.layout.colWidt
 const stampSz = () => isSingle() ? proj.layout.singleStamp : proj.layout.stampSize;
 const stampH = () => stampSz() * 1.25 + 30;
 const headerH = () => isSingle() ? 100 : HEADER_H;
-const iconSz = () => proj.layout.iconSize * (isSingle() ? 1.5 : 1);
+const iconSz = g => Math.min(proj.layout.iconSize * (isSingle() ? 1.5 : 1) * ((g && g.iconScale) || 1), colW() - 16);
+const sideSz = g => Math.min(iconSz(g) * 0.7, colW() * 0.45);
 function isBig(it) {
   if (it.type !== 'stat') return false;
   const d = it.display || 'auto';
@@ -522,8 +523,8 @@ function measureItem(ctx, it, w) {
 const showName = g => g.name && !g.hideName;
 function measureGroup(ctx, g, w) {
   const L = proj.layout; let h = 10;
-  if (g.icon && L.iconStyle === 'side') h += Math.max(iconSz() * 0.7, 30) + 6;
-  else if (g.icon) { h += iconSz() + 4; if (showName(g)) h += 26; }
+  if (g.icon && L.iconStyle === 'side') h += Math.max(sideSz(g), 30) + 6;
+  else if (g.icon) { h += iconSz(g) + 4; if (showName(g)) h += 26; }
   else if (showName(g)) h += 32;
   g.items.forEach((it, i) => { h += measureItem(ctx, it, w - 16) + (i ? 8 : 0); });
   return h + 10;
@@ -649,12 +650,12 @@ function drawGroup(ctx, g, x, y, w, h, sessColor, verdict) {
   let cy = y + 10;
   const drawIcon = (ix, iy, s) => { const im = getImg(g.icon); if (!im) return; const k = Math.min(s / im.naturalWidth, s / im.naturalHeight), iw = im.naturalWidth * k, ih = im.naturalHeight * k; ctx.save(); ctx.shadowColor = rgba(sessColor, 0.6); ctx.shadowBlur = 14; ctx.drawImage(im, ix + (s - iw) / 2, iy + (s - ih) / 2, iw, ih); ctx.restore(); };
   if (g.icon && L.iconStyle === 'side') {
-    const s = iconSz() * 0.7, rowH = Math.max(s, 30);
+    const s = sideSz(g), rowH = Math.max(s, 30);
     drawIcon(x + 8, cy + (rowH - s) / 2, s);
     if (showName(g)) { const tx = x + 16 + s; const fs = fitSize(ctx, g.name.toUpperCase(), z => bodyFont(z), isSingle() ? 20 : 15, x + w - 8 - tx, 1.2); ctx.save(); ctx.font = bodyFont(fs); setLS(ctx, 1.2); ctx.fillStyle = St.cardText; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(g.name.toUpperCase(), tx, cy + rowH / 2 + 1); ctx.restore(); }
     cy += rowH + 6;
   } else if (g.icon) {
-    const s = iconSz();
+    const s = iconSz(g);
     drawIcon(x + w / 2 - s / 2, cy, s);
     cy += s + 4;
     if (showName(g)) { const fs = fitSize(ctx, g.name.toUpperCase(), z => bodyFont(z), 14, w - 16, 1.2); ctx.save(); ctx.font = bodyFont(fs); setLS(ctx, 1.2); ctx.fillStyle = St.cardText; ctx.textAlign = 'center'; ctx.fillText(g.name.toUpperCase(), x + w / 2, cy + 17); ctx.restore(); cy += 26; }
@@ -939,7 +940,8 @@ function groupEd(s, g, gi) {
         ib('↓', 'Move down', () => { move(s.groups, gi, 1); rebuild(); }),
         delBtn(() => { s.groups.splice(gi, 1); rebuild(); })),
       el('div', { class: 'ghead' }, el('label', { class: 'chk', style: 'font-size:12px' }, hide, 'Show name'), el('span', { class: 'grow' }),
-        g.icon ? el('button', { class: 'btn sm danger', type: 'button', onclick: () => { g.icon = ''; rebuild(); } }, 'Remove image') : null))));
+        g.icon ? el('button', { class: 'btn sm danger', type: 'button', onclick: () => { g.icon = ''; rebuild(); } }, 'Remove image') : null),
+      g.icon ? (() => { const r = el('input', { type: 'range', min: 0.4, max: 3, step: 0.05, id: g.id + '-isc', 'aria-label': 'This image size' }); r.value = g.iconScale || 1; const o = el('output', {}, Math.round((g.iconScale || 1) * 100) + '%'); r.addEventListener('input', () => { g.iconScale = +r.value; o.textContent = Math.round(r.value * 100) + '%'; changed(); }); return el('label', { class: 'field' }, el('span', {}, 'This image size'), el('div', { class: 'rng' }, r, o)); })() : null)));
   g.items.forEach((it, ii) => box.append(it.type === 'note' ? noteEd(g, it, ii) : statEd(g, it, ii)));
   box.append(el('div', { class: 'tools' },
     el('button', { class: 'btn sm', type: 'button', onclick: () => { g.items.push(stat('New stat', [{ label: proj.layout.levelPrefix + ' 1', before: '', after: '' }])); rebuild(); } }, '+ Stat change'),
@@ -995,7 +997,8 @@ const STYLE_SPEC = [
   ['Panels & arrows', [['style.panel', 'Panel style', 'select', [['glass', 'Glass'], ['fill', 'Solid fill'], ['metal', 'Metal'], ['comic', 'Comic'], ['line', 'Minimal line']]], ['style.corner', 'Corners', 'select', [['cut', 'Cut'], ['round', 'Round'], ['sharp', 'Sharp']]], ['style.bgStyle', 'Backdrop', 'select', [['grid', 'Grid'], ['radial', 'Radial glow'], ['halftone', 'Halftone'], ['scan', 'Diagonal lines'], ['plain', 'Plain']]], ['style.cardAlpha', 'Card opacity', 'range', 0, 1, 0.05], ['style.patternOpacity', 'Arrow pattern', 'range', 0, 0.5, 0.01], ['style.patternSize', 'Arrow size', 'range', 14, 80, 1], ['style.patternTilt', 'Arrow tilt', 'range', -90, 90, 1]]],
   ['Layout', [['layout.colWidth', 'Column width', 'range', 170, 360, 2], ['layout.perRow', 'Columns per row', 'range', 1, 12, 1], ['layout.minHeight', 'Min height', 'range', 300, 1400, 10], ['layout.showChar', 'Character panel', 'check'], ['layout.charWidth', 'Character width', 'range', 160, 440, 2], ['layout.showBanner', 'Title banner', 'check'], ['layout.bannerTitle', 'Banner title', 'text'], ['layout.bannerSub', 'Banner subtitle', 'text', 'Auto: name · dates'], ['layout.showSummary', 'Buff/nerf tally', 'check'], ['layout.showUpcoming', '“Upcoming” column', 'check'], ['layout.upcomingLabel', 'Upcoming label', 'text'], ['layout.footer', 'Footer / credit', 'text', '@yourhandle']]],
   ['Big 3D numbers', [['layout.bigAuto', 'Single mode: big numbers for short stats', 'check'], ['layout.bigMaxRows', 'Max rows to go big', 'range', 1, 9, 1], ['layout.singleColWidth', 'Single column width', 'range', 260, 900, 2], ['layout.singleStamp', 'Single stamp size', 'range', 40, 150, 1], ['layout.heroScale', 'Number size', 'range', 0.5, 1.8, 0.05], ['layout.heroDepth', 'Thickness', 'range', 0, 3, 0.05], ['layout.heroTilt', 'Rotation', 'range', -20, 20, 0.5], ['layout.heroSkew', 'Slant', 'range', -30, 30, 1], ['layout.heroTurn', 'Turn (fake 3D yaw)', 'range', -40, 40, 1], ['layout.heroArrow', 'Arrow', 'select', [['chunky', 'Chunky arrow'], ['chevron', 'Double chevron'], ['none', 'No arrow']]], ['layout.heroBefore', 'Old value', 'select', [['dim', 'Muted'], ['color', 'Colored'], ['hide', 'Hidden']]], ['layout.heroDirIcon', 'Up/down marker after new value', 'check']]],
-  ['Stamps & details', [['layout.stampSize', 'Stamp size', 'range', 24, 90, 1], ['layout.stampTilt', 'Stamp tilt', 'range', -20, 20, 1], ['layout.stampPos', 'Stamp position', 'select', [['bottom', 'Bottom'], ['top', 'Under date']]], ['layout.labels.buff', 'Buff word', 'text'], ['layout.labels.nerf', 'Nerf word', 'text'], ['layout.labels.rework', 'Rework word', 'text'], ['layout.labels.adjust', 'Adjust word', 'text'], ['layout.iconSize', 'Skill image size', 'range', 32, 140, 1], ['layout.iconStyle', 'Skill image position', 'select', [['top', 'Above name'], ['side', 'Beside name']]], ['layout.autoBadge', 'Badges when no icon', 'check'], ['layout.strike', 'Strike old values', 'check'], ['layout.levelPrefix', 'Row label prefix', 'text']]]
+  ['Skill images', [['layout.iconSize', 'Skill image size', 'range', 32, 360, 1], ['layout.iconStyle', 'Skill image position', 'select', [['top', 'Above name'], ['side', 'Beside name']]], ['layout.autoBadge', 'Letter badges when no image', 'check']]],
+  ['Stamps & details', [['layout.stampSize', 'Stamp size', 'range', 24, 90, 1], ['layout.stampTilt', 'Stamp tilt', 'range', -20, 20, 1], ['layout.stampPos', 'Stamp position', 'select', [['bottom', 'Bottom'], ['top', 'Under date']]], ['layout.labels.buff', 'Buff word', 'text'], ['layout.labels.nerf', 'Nerf word', 'text'], ['layout.labels.rework', 'Rework word', 'text'], ['layout.labels.adjust', 'Adjust word', 'text'], ['layout.strike', 'Strike old values', 'check'], ['layout.levelPrefix', 'Row label prefix', 'text']]]
 ];
 function renderStylePane() {
   const pane = $('#pane-style'); pane.textContent = '';
